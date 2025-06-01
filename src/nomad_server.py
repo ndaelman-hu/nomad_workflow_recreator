@@ -87,13 +87,94 @@ class NomadClient:
         response.raise_for_status()
         return response.content
     
-    async def get_dataset_entries(self, dataset_id: str = None, upload_name: str = None) -> Dict[str, Any]:
-        """Get all entries from a specific dataset/upload"""
+    async def get_dataset_entries(self, dataset_id: str = None, upload_name: str = None, max_entries: int = None) -> Dict[str, Any]:
+        """Get all entries from a specific dataset/upload with pagination handling"""
         headers = {}
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         
-        query = {"pagination": {"page_size": 1000}}
+        all_entries = []
+        page = 0
+        page_size = 100  # Smaller page size for reliability
+        total_entries = 0
+        
+        while True:
+            query = {
+                "pagination": {
+                    "page_size": page_size,
+                    "page": page
+                }
+            }
+            
+            if dataset_id:
+                query["dataset_id"] = dataset_id
+            if upload_name:
+                query["upload_name"] = upload_name
+            
+            try:
+                response = await self.client.post(
+                    f"{self.base_url}/entries/query",
+                    json=query,
+                    headers=headers
+                )
+                response.raise_for_status()
+                result = response.json()
+                
+                # Get entries from this page
+                page_entries = result.get("data", [])
+                all_entries.extend(page_entries)
+                
+                # Update total count from first response
+                if page == 0:
+                    total_entries = result.get("pagination", {}).get("total", len(page_entries))
+                
+                # Check if we have all entries or hit max limit
+                if len(page_entries) < page_size or (max_entries and len(all_entries) >= max_entries):
+                    break
+                
+                page += 1
+                
+                # Safety limit to prevent infinite loops
+                if page > 1000:  # Max 100k entries
+                    break
+                    
+            except Exception as e:
+                print(f"Error fetching page {page}: {e}")
+                break
+        
+        # Trim to max_entries if specified
+        if max_entries:
+            all_entries = all_entries[:max_entries]
+        
+        return {
+            "data": all_entries,
+            "pagination": {
+                "total": total_entries,
+                "retrieved": len(all_entries),
+                "pages_fetched": page + 1
+            }
+        }
+    
+    async def get_dataset_entries_lightweight(self, dataset_id: str = None, upload_name: str = None, max_entries: int = 50) -> Dict[str, Any]:
+        """Lightweight preview of dataset entries focusing on workflow essentials"""
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        
+        # Request only essential fields for workflow analysis
+        query = {
+            "pagination": {"page_size": min(max_entries, 100)},
+            "required": {
+                "include": [
+                    "entry_id",
+                    "entry_name", 
+                    "entry_type",
+                    "formula",
+                    "upload_name",
+                    "processing_errors"
+                ]
+            }
+        }
         
         if dataset_id:
             query["dataset_id"] = dataset_id
@@ -107,6 +188,85 @@ class NomadClient:
         )
         response.raise_for_status()
         return response.json()
+    
+    async def get_entry_workflow_summary(self, entry_id: str) -> Dict[str, Any]:
+        """Get lightweight workflow summary focusing on method and system info"""
+        headers = {}
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        
+        # Request only workflow-relevant sections
+        query = {
+            "entry_id": entry_id,
+            "required": [
+                "run.program",
+                "run.method", 
+                "run.system",
+                "workflow2.name",
+                "metadata.entry_type",
+                "results.material.formula_hill"
+            ]
+        }
+        
+        response = await self.client.post(
+            f"{self.base_url}/entries/archive/query",
+            json=query,
+            headers=headers
+        )
+        response.raise_for_status()
+        
+        result = response.json()
+        archive = result.get("data", {}).get("archive", {}).get("data", {})
+        
+        # Extract and summarize key workflow information
+        summary = {
+            "entry_id": entry_id,
+            "workflow_name": None,
+            "programs": [],
+            "methods": [],
+            "system_info": {},
+            "formula": None
+        }
+        
+        # Extract workflow name
+        if "workflow2" in archive:
+            summary["workflow_name"] = archive["workflow2"].get("name")
+        
+        # Extract run information
+        if "run" in archive:
+            runs = archive["run"] if isinstance(archive["run"], list) else [archive["run"]]
+            for run in runs:
+                if "program" in run:
+                    prog = run["program"]
+                    summary["programs"].append({
+                        "name": prog.get("name"),
+                        "version": prog.get("version")
+                    })
+                
+                if "method" in run:
+                    methods = run["method"] if isinstance(run["method"], list) else [run["method"]]
+                    for method in methods:
+                        summary["methods"].append({
+                            "type": method.get("type"),
+                            "basis_set": method.get("basis_set", {}).get("type"),
+                            "electronic": method.get("electronic", {}).get("method")
+                        })
+                
+                if "system" in run:
+                    systems = run["system"] if isinstance(run["system"], list) else [run["system"]]
+                    for system in systems:
+                        summary["system_info"] = {
+                            "n_atoms": len(system.get("atoms", {}).get("labels", [])) if "atoms" in system else None,
+                            "chemical_formula": system.get("chemical_formula"),
+                            "crystal_system": system.get("symmetry", {}).get("crystal_system")
+                        }
+                        break  # Just take first system
+        
+        # Extract formula from results
+        if "results" in archive and "material" in archive["results"]:
+            summary["formula"] = archive["results"]["material"].get("formula_hill")
+        
+        return summary
     
     async def get_entry_files_info(self, entry_id: str) -> Dict[str, Any]:
         """Get file structure information for an entry without downloading content"""
@@ -282,6 +442,63 @@ async def list_tools() -> List[Tool]:
                     "upload_name": {
                         "type": "string",
                         "description": "Upload/dataset name"
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="nomad_preview_dataset",
+            description="Lightweight preview of dataset entries focusing on workflow essentials",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "dataset_id": {
+                        "type": "string",
+                        "description": "NOMAD dataset ID"
+                    },
+                    "upload_name": {
+                        "type": "string",
+                        "description": "Upload/dataset name"
+                    },
+                    "max_entries": {
+                        "type": "number",
+                        "default": 20,
+                        "description": "Maximum number of entries to preview"
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="nomad_get_entry_workflow_summary",
+            description="Get lightweight workflow summary focusing on method, program, and system info",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "NOMAD entry ID"
+                    }
+                },
+                "required": ["entry_id"]
+            }
+        ),
+        Tool(
+            name="nomad_get_dataset_entries_paginated", 
+            description="Get dataset entries with full pagination support and optional limits",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "dataset_id": {
+                        "type": "string",
+                        "description": "NOMAD dataset ID"
+                    },
+                    "upload_name": {
+                        "type": "string", 
+                        "description": "Upload/dataset name"
+                    },
+                    "max_entries": {
+                        "type": "number",
+                        "description": "Maximum number of entries to retrieve (for large datasets)"
                     }
                 }
             }
@@ -578,6 +795,147 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
         except Exception as e:
             return CallToolResult(
                 content=[TextContent(type="text", text=f"Error analyzing dataset structure: {str(e)}")]
+            )
+    
+    elif name == "nomad_preview_dataset":
+        dataset_id = arguments.get("dataset_id")
+        upload_name = arguments.get("upload_name")
+        max_entries = arguments.get("max_entries", 20)
+        
+        try:
+            preview_data = await nomad_client.get_dataset_entries_lightweight(dataset_id, upload_name, max_entries)
+            entries = preview_data.get("data", [])
+            
+            # Create lightweight summary
+            preview_text = f"Dataset Preview ({len(entries)} entries shown):\n\n"
+            
+            # Group by entry type and formula for overview
+            type_counts = {}
+            formula_counts = {}
+            upload_counts = {}
+            
+            for entry in entries:
+                entry_type = entry.get("entry_type", "unknown")
+                formula = entry.get("formula", "unknown")
+                upload = entry.get("upload_name", "unknown")
+                
+                type_counts[entry_type] = type_counts.get(entry_type, 0) + 1
+                formula_counts[formula] = formula_counts.get(formula, 0) + 1
+                upload_counts[upload] = upload_counts.get(upload, 0) + 1
+            
+            preview_text += f"Entry Types: {dict(list(type_counts.items())[:5])}\n"
+            preview_text += f"Top Formulas: {dict(list(formula_counts.items())[:5])}\n"
+            preview_text += f"Upload Groups: {len(upload_counts)} groups\n\n"
+            
+            preview_text += "Sample Entries:\n"
+            for entry in entries[:10]:
+                preview_text += f"- {entry.get('entry_id')}: {entry.get('formula')} ({entry.get('entry_type')})\n"
+            
+            if len(entries) > 10:
+                preview_text += f"... and {len(entries) - 10} more entries"
+            
+            return CallToolResult(
+                content=[
+                    TextContent(type="text", text=preview_text)
+                ]
+            )
+            
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error previewing dataset: {str(e)}")]
+            )
+    
+    elif name == "nomad_get_entry_workflow_summary":
+        entry_id = arguments["entry_id"]
+        
+        try:
+            summary = await nomad_client.get_entry_workflow_summary(entry_id)
+            
+            summary_text = f"Workflow Summary for {entry_id}:\n\n"
+            
+            if summary["workflow_name"]:
+                summary_text += f"Workflow: {summary['workflow_name']}\n"
+            
+            if summary["formula"]:
+                summary_text += f"Formula: {summary['formula']}\n"
+            
+            if summary["programs"]:
+                programs_str = ", ".join([f"{p['name']} v{p['version']}" for p in summary["programs"]])
+                summary_text += f"Programs: {programs_str}\n"
+            
+            if summary["methods"]:
+                for i, method in enumerate(summary["methods"]):
+                    summary_text += f"Method {i+1}: {method.get('type', 'Unknown')}\n"
+                    if method.get("electronic"):
+                        summary_text += f"  Electronic: {method['electronic']}\n"
+                    if method.get("basis_set"):
+                        summary_text += f"  Basis Set: {method['basis_set']}\n"
+            
+            if summary["system_info"]:
+                sys_info = summary["system_info"]
+                summary_text += f"System: "
+                if sys_info.get("n_atoms"):
+                    summary_text += f"{sys_info['n_atoms']} atoms, "
+                if sys_info.get("chemical_formula"):
+                    summary_text += f"{sys_info['chemical_formula']}, "
+                if sys_info.get("crystal_system"):
+                    summary_text += f"{sys_info['crystal_system']} crystal"
+                summary_text += "\n"
+            
+            return CallToolResult(
+                content=[
+                    TextContent(type="text", text=summary_text)
+                ]
+            )
+            
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error getting workflow summary: {str(e)}")]
+            )
+    
+    elif name == "nomad_get_dataset_entries_paginated":
+        dataset_id = arguments.get("dataset_id")
+        upload_name = arguments.get("upload_name")
+        max_entries = arguments.get("max_entries")
+        
+        try:
+            dataset_data = await nomad_client.get_dataset_entries(dataset_id, upload_name, max_entries)
+            entries = dataset_data.get("data", [])
+            pagination = dataset_data.get("pagination", {})
+            
+            # Format entries for workflow analysis
+            formatted_entries = []
+            for entry in entries:
+                formatted_entries.append({
+                    "entry_id": entry.get("entry_id"),
+                    "upload_name": entry.get("upload_name"),
+                    "entry_name": entry.get("entry_name"),
+                    "formula": entry.get("formula"),
+                    "entry_type": entry.get("entry_type"),
+                    "authors": entry.get("authors", []),
+                    "processing_errors": entry.get("processing_errors", [])
+                })
+            
+            result_text = f"Paginated Dataset Entries:\n\n"
+            result_text += f"Retrieved: {pagination.get('retrieved', len(entries))} / {pagination.get('total', 'unknown')} total entries\n"
+            result_text += f"Pages fetched: {pagination.get('pages_fetched', 1)}\n\n"
+            
+            # Show sample entries
+            for entry in formatted_entries[:15]:
+                result_text += f"- {entry['entry_id']}: {entry['entry_name']} ({entry['entry_type']})\n"
+            
+            if len(formatted_entries) > 15:
+                result_text += f"... and {len(formatted_entries) - 15} more entries\n"
+            
+            return CallToolResult(
+                content=[
+                    TextContent(type="text", text=result_text)
+                ]
+            )
+            
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error retrieving paginated entries: {str(e)}")]
             )
     
     else:

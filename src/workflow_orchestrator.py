@@ -43,51 +43,88 @@ class WorkflowOrchestrator:
             Summary of reconstruction process
         """
         
-        # Step 1: Extract dataset entries from NOMAD
+        # Step 1: Preview dataset first to understand scope
+        print(f"🔍 Previewing NOMAD dataset: {dataset_identifier}")
+        if identifier_type == "dataset_id":
+            preview_data = await self.nomad_client.get_dataset_entries_lightweight(dataset_id=dataset_identifier, max_entries=50)
+        else:
+            preview_data = await self.nomad_client.get_dataset_entries_lightweight(upload_name=dataset_identifier, max_entries=50)
+        
+        preview_entries = preview_data.get("data", [])
+        total_estimated = preview_data.get("pagination", {}).get("total", len(preview_entries))
+        
+        print(f"📊 Dataset preview: ~{total_estimated} total entries, analyzing first {len(preview_entries)}")
+        
+        # Decide on full extraction strategy based on size
+        if total_estimated > 1000:
+            print(f"⚠️  Large dataset detected ({total_estimated} entries). Using sampling strategy...")
+            max_entries = 500  # Limit for very large datasets
+        else:
+            max_entries = None  # Extract all entries
+        
+        # Step 2: Extract full dataset with pagination
         print(f"🔍 Extracting entries from NOMAD dataset: {dataset_identifier}")
         if identifier_type == "dataset_id":
-            dataset_data = await self.nomad_client.get_dataset_entries(dataset_id=dataset_identifier)
+            dataset_data = await self.nomad_client.get_dataset_entries(dataset_id=dataset_identifier, max_entries=max_entries)
         else:
-            dataset_data = await self.nomad_client.get_dataset_entries(upload_name=dataset_identifier)
+            dataset_data = await self.nomad_client.get_dataset_entries(upload_name=dataset_identifier, max_entries=max_entries)
         
         entries = dataset_data.get("data", [])
-        print(f"📊 Found {len(entries)} entries in dataset")
+        pagination_info = dataset_data.get("pagination", {})
+        print(f"📊 Retrieved {len(entries)} entries ({pagination_info.get('pages_fetched', 1)} pages)")
         
-        # Step 2: Analyze each entry's workflow and file structure
+        # Step 3: Analyze entry metadata using lightweight methods
         print("🔬 Analyzing entry metadata and file structures...")
         workflow_entries = []
         
-        for i, entry in enumerate(entries):
-            entry_id = entry.get("entry_id")
-            print(f"  Processing entry {i+1}/{len(entries)}: {entry_id}")
+        # Process entries in batches to manage API load
+        batch_size = 20
+        for batch_start in range(0, len(entries), batch_size):
+            batch_end = min(batch_start + batch_size, len(entries))
+            batch_entries = entries[batch_start:batch_end]
             
-            # Get workflow metadata
-            try:
-                workflow_metadata = await self.nomad_client.get_workflow_metadata(entry_id)
-                workflow_data = workflow_metadata.get("data", {}).get("archive", {}).get("data", {})
-            except Exception as e:
-                print(f"    ⚠️  Could not get workflow metadata: {e}")
-                workflow_data = {}
+            print(f"  Processing batch {batch_start//batch_size + 1}: entries {batch_start+1}-{batch_end}")
             
-            # Get file structure
-            try:
-                file_data = await self.nomad_client.get_entry_files_info(entry_id)
-                files = file_data.get("data", {}).get("archive", {}).get("data", {}).get("files", [])
-                file_structure = self._analyze_file_structure(files)
-            except Exception as e:
-                print(f"    ⚠️  Could not get file structure: {e}")
+            for i, entry in enumerate(batch_entries):
+                entry_id = entry.get("entry_id")
+                
+                # Use lightweight workflow summary instead of full metadata
+                try:
+                    workflow_summary = await self.nomad_client.get_entry_workflow_summary(entry_id)
+                    workflow_data = {
+                        "workflow_name": workflow_summary.get("workflow_name"),
+                        "programs": workflow_summary.get("programs", []),
+                        "methods": workflow_summary.get("methods", []),
+                        "system_info": workflow_summary.get("system_info", {})
+                    }
+                except Exception as e:
+                    print(f"    ⚠️  Could not get workflow summary for {entry_id}: {e}")
+                    workflow_data = {}
+                
+                # Get file structure (only for representative entries or when needed)
                 file_structure = {}
+                if len(workflow_entries) < 10 or i % 5 == 0:  # Sample file structures
+                    try:
+                        file_data = await self.nomad_client.get_entry_files_info(entry_id)
+                        files = file_data.get("data", {}).get("archive", {}).get("data", {}).get("files", [])
+                        file_structure = self._analyze_file_structure(files)
+                    except Exception as e:
+                        print(f"    ⚠️  Could not get file structure for {entry_id}: {e}")
+                        file_structure = {}
+                
+                workflow_entry = WorkflowEntry(
+                    entry_id=entry_id,
+                    entry_name=entry.get("entry_name", ""),
+                    entry_type=entry.get("entry_type", "unknown"),
+                    formula=entry.get("formula", ""),
+                    upload_name=entry.get("upload_name", ""),
+                    workflow_metadata=workflow_data,
+                    file_structure=file_structure
+                )
+                workflow_entries.append(workflow_entry)
             
-            workflow_entry = WorkflowEntry(
-                entry_id=entry_id,
-                entry_name=entry.get("entry_name", ""),
-                entry_type=entry.get("entry_type", "unknown"),
-                formula=entry.get("formula", ""),
-                upload_name=entry.get("upload_name", ""),
-                workflow_metadata=workflow_data,
-                file_structure=file_structure
-            )
-            workflow_entries.append(workflow_entry)
+            # Small delay between batches to be respectful to API
+            await asyncio.sleep(0.5)
         
         # Step 3: Create graph structure in Memgraph
         print("🔗 Creating graph structure in Memgraph...")
