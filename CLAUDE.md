@@ -50,8 +50,24 @@ Provides tools for:
 - Finding shortest paths between entities
 - Schema introspection
 
+### Workflow Orchestrator
+`src/workflow_orchestrator.py` - Coordinates complete dataset reconstruction:
+- Extracts entire datasets from NOMAD
+- Analyzes file structures and workflow metadata
+- Infers semantic relationships between calculations
+- Builds comprehensive workflow graphs in Memgraph
+
 ### Integration Pattern
-The servers work together to:
-1. Query NOMAD for materials data
-2. Store relationships and workflows in Memgraph
-3. Enable graph-based workflow recreation and analysis
+The system reconstructs workflows through:
+1. **Dataset Analysis**: Extract all entries from NOMAD public datasets
+2. **Metadata Extraction**: Get workflow metadata and file structures (no raw content)
+3. **Relationship Inference**: Analyze entry types, file patterns, and formulas to infer workflow dependencies
+4. **Graph Construction**: Build semantic graph with entries as nodes and workflow relationships as edges
+5. **Workflow Recreation**: Trace complete computational workflows through graph traversal
+
+### Key Workflow Relationship Types
+- `PROVIDES_STRUCTURE`: Geometry optimization → Electronic structure calculation
+- `PROVIDES_ELECTRONIC_STRUCTURE`: SCF → DOS/Band structure calculations  
+- `PROVIDES_INPUT_DATA`: Output files → Input for next calculation
+- `WORKFLOW_STEP`: Sequential steps in same workflow
+- `SAME_MATERIAL`: Same formula across different workflows

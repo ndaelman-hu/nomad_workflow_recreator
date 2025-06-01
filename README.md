@@ -37,18 +37,32 @@ MCP (Model Context Protocol) servers for integrating NOMAD materials science dat
 
 ## Usage
 
-The MCP servers expose tools for:
+### Dataset Workflow Reconstruction
 
-### NOMAD Operations
-- Search materials by formula, elements, or properties
-- Retrieve detailed entry archives
-- Download raw computational files
+The system can automatically reconstruct complete computational workflows from NOMAD public datasets:
 
-### Graph Operations
-- Execute Cypher queries
-- Create material and workflow nodes
-- Establish relationships between calculations
-- Find shortest paths in workflow graphs
+```python
+from src.workflow_orchestrator import WorkflowOrchestrator
+
+orchestrator = WorkflowOrchestrator()
+summary = await orchestrator.reconstruct_dataset_workflow("dataset_name", "upload_name")
+```
+
+### MCP Server Tools
+
+#### NOMAD Operations
+- `nomad_search_entries` - Search materials by formula, elements, properties
+- `nomad_get_dataset_entries` - Extract all entries from a dataset
+- `nomad_get_entry_files` - Analyze file structures (no raw content)
+- `nomad_get_workflow_metadata` - Extract workflow and calculation metadata
+- `nomad_analyze_dataset_structure` - Overview of dataset composition
+
+#### Graph Operations  
+- `memgraph_create_dataset_graph` - Build complete workflow graph from dataset
+- `memgraph_add_workflow_relationships` - Add semantic relationships
+- `memgraph_analyze_workflow_patterns` - Analyze workflow dependencies
+- `memgraph_trace_workflow` - Trace complete workflows from any entry
+- `memgraph_find_workflow_entry_types` - Find specific calculation types
 
 ## Architecture
 

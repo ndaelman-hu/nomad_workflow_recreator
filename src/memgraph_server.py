@@ -236,6 +236,125 @@ async def list_tools() -> List[Tool]:
                 },
                 "required": ["from_node", "to_node"]
             }
+        ),
+        Tool(
+            name="memgraph_create_dataset_graph",
+            description="Create a complete workflow graph from NOMAD dataset analysis",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "dataset_id": {
+                        "type": "string",
+                        "description": "Unique identifier for the dataset"
+                    },
+                    "dataset_name": {
+                        "type": "string",
+                        "description": "Human-readable dataset name"
+                    },
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "entry_id": {"type": "string"},
+                                "entry_name": {"type": "string"},
+                                "entry_type": {"type": "string"},
+                                "formula": {"type": "string"},
+                                "upload_name": {"type": "string"},
+                                "workflow_metadata": {"type": "object"},
+                                "file_structure": {"type": "object"}
+                            }
+                        },
+                        "description": "List of entries with their metadata"
+                    }
+                },
+                "required": ["dataset_id", "entries"]
+            }
+        ),
+        Tool(
+            name="memgraph_add_workflow_relationships",
+            description="Add semantic relationships between workflow entries based on analysis",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "relationships": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "from_entry_id": {"type": "string"},
+                                "to_entry_id": {"type": "string"},
+                                "relationship_type": {"type": "string"},
+                                "properties": {"type": "object"}
+                            }
+                        },
+                        "description": "List of relationships to create"
+                    }
+                },
+                "required": ["relationships"]
+            }
+        ),
+        Tool(
+            name="memgraph_analyze_workflow_patterns",
+            description="Analyze workflow patterns and dependencies in the graph",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "dataset_id": {
+                        "type": "string",
+                        "description": "Dataset ID to analyze"
+                    },
+                    "analysis_type": {
+                        "type": "string",
+                        "enum": ["dependencies", "clusters", "paths", "summary"],
+                        "default": "summary",
+                        "description": "Type of analysis to perform"
+                    }
+                },
+                "required": ["dataset_id"]
+            }
+        ),
+        Tool(
+            name="memgraph_find_workflow_entry_types",
+            description="Find all entries of a specific type in workflow graphs",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_type": {
+                        "type": "string",
+                        "description": "Type of entry to find (e.g., 'calculation', 'geometry_optimization')"
+                    },
+                    "dataset_id": {
+                        "type": "string",
+                        "description": "Optional dataset ID to limit search"
+                    }
+                }
+            }
+        ),
+        Tool(
+            name="memgraph_trace_workflow",
+            description="Trace the complete workflow from a starting entry",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "Starting entry ID"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["forward", "backward", "both"],
+                        "default": "both",
+                        "description": "Direction to trace workflow"
+                    },
+                    "max_depth": {
+                        "type": "number",
+                        "default": 5,
+                        "description": "Maximum depth to trace"
+                    }
+                },
+                "required": ["entry_id"]
+            }
         )
     ]
 
@@ -407,6 +526,239 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                     )
                 ]
             )
+        
+        elif name == "memgraph_create_dataset_graph":
+            dataset_id = arguments["dataset_id"]
+            dataset_name = arguments.get("dataset_name", dataset_id)
+            entries = arguments["entries"]
+            
+            try:
+                # Create dataset node
+                dataset_query = """
+                MERGE (d:Dataset {dataset_id: $dataset_id})
+                SET d.name = $dataset_name, d.entry_count = $entry_count
+                RETURN d
+                """
+                await memgraph_client.execute_query(dataset_query, {
+                    "dataset_id": dataset_id,
+                    "dataset_name": dataset_name,
+                    "entry_count": len(entries)
+                })
+                
+                # Create entry nodes
+                nodes_created = 0
+                for entry in entries:
+                    entry_query = """
+                    CREATE (e:Entry {
+                        entry_id: $entry_id,
+                        entry_name: $entry_name,
+                        entry_type: $entry_type,
+                        formula: $formula,
+                        upload_name: $upload_name
+                    })
+                    WITH e
+                    MATCH (d:Dataset {dataset_id: $dataset_id})
+                    CREATE (d)-[:CONTAINS]->(e)
+                    RETURN e
+                    """
+                    
+                    await memgraph_client.execute_query(entry_query, {
+                        "entry_id": entry.get("entry_id"),
+                        "entry_name": entry.get("entry_name", ""),
+                        "entry_type": entry.get("entry_type", "unknown"),
+                        "formula": entry.get("formula", ""),
+                        "upload_name": entry.get("upload_name", ""),
+                        "dataset_id": dataset_id
+                    })
+                    nodes_created += 1
+                
+                return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=f"Created dataset graph for '{dataset_name}':\n"
+                                 f"- 1 Dataset node\n"
+                                 f"- {nodes_created} Entry nodes\n"
+                                 f"- {nodes_created} CONTAINS relationships"
+                        )
+                    ]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error creating dataset graph: {str(e)}")]
+                )
+        
+        elif name == "memgraph_add_workflow_relationships":
+            relationships = arguments["relationships"]
+            
+            try:
+                relationships_created = 0
+                for rel in relationships:
+                    rel_query = """
+                    MATCH (from:Entry {entry_id: $from_id})
+                    MATCH (to:Entry {entry_id: $to_id})
+                    CREATE (from)-[r:`{rel_type}`]->(to)
+                    SET r += $properties
+                    RETURN r
+                    """.format(rel_type=rel["relationship_type"])
+                    
+                    await memgraph_client.execute_query(rel_query, {
+                        "from_id": rel["from_entry_id"],
+                        "to_id": rel["to_entry_id"],
+                        "properties": rel.get("properties", {})
+                    })
+                    relationships_created += 1
+                
+                return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=f"Created {relationships_created} workflow relationships"
+                        )
+                    ]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error creating relationships: {str(e)}")]
+                )
+        
+        elif name == "memgraph_analyze_workflow_patterns":
+            dataset_id = arguments["dataset_id"]
+            analysis_type = arguments.get("analysis_type", "summary")
+            
+            try:
+                if analysis_type == "summary":
+                    summary_query = """
+                    MATCH (d:Dataset {dataset_id: $dataset_id})-[:CONTAINS]->(e:Entry)
+                    WITH d, collect(e.entry_type) as types, count(e) as entry_count
+                    MATCH (e1:Entry)-[r]->(e2:Entry)
+                    WHERE e1.entry_id STARTS WITH $dataset_id OR e2.entry_id STARTS WITH $dataset_id
+                    RETURN d.name as dataset_name, entry_count, 
+                           size(apoc.coll.toSet(types)) as unique_types,
+                           type(r) as rel_type, count(r) as rel_count
+                    """
+                    
+                elif analysis_type == "dependencies":
+                    summary_query = """
+                    MATCH (d:Dataset {dataset_id: $dataset_id})-[:CONTAINS]->(e:Entry)
+                    MATCH (e)-[r]->(dependent:Entry)
+                    RETURN e.entry_id as entry, dependent.entry_id as depends_on, 
+                           type(r) as relationship, e.entry_type as entry_type
+                    LIMIT 20
+                    """
+                    
+                elif analysis_type == "clusters":
+                    summary_query = """
+                    MATCH (d:Dataset {dataset_id: $dataset_id})-[:CONTAINS]->(e:Entry)
+                    WHERE e.upload_name IS NOT NULL
+                    WITH e.upload_name as cluster, collect(e.entry_id) as entries
+                    RETURN cluster, size(entries) as cluster_size, entries[0..5] as sample_entries
+                    ORDER BY cluster_size DESC
+                    """
+                    
+                results = await memgraph_client.execute_query(summary_query, {"dataset_id": dataset_id})
+                
+                analysis_text = f"Workflow Analysis ({analysis_type}):\n\n"
+                for result in results[:10]:  # Limit results
+                    analysis_text += f"{result}\n"
+                
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=analysis_text)
+                    ]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error analyzing workflow patterns: {str(e)}")]
+                )
+        
+        elif name == "memgraph_find_workflow_entry_types":
+            entry_type = arguments["entry_type"]
+            dataset_id = arguments.get("dataset_id")
+            
+            try:
+                if dataset_id:
+                    query = """
+                    MATCH (d:Dataset {dataset_id: $dataset_id})-[:CONTAINS]->(e:Entry)
+                    WHERE e.entry_type = $entry_type
+                    RETURN e.entry_id, e.entry_name, e.formula, e.upload_name
+                    LIMIT 20
+                    """
+                    params = {"entry_type": entry_type, "dataset_id": dataset_id}
+                else:
+                    query = """
+                    MATCH (e:Entry)
+                    WHERE e.entry_type = $entry_type
+                    RETURN e.entry_id, e.entry_name, e.formula, e.upload_name
+                    LIMIT 20
+                    """
+                    params = {"entry_type": entry_type}
+                
+                results = await memgraph_client.execute_query(query, params)
+                
+                result_text = f"Found {len(results)} entries of type '{entry_type}':\n\n"
+                for result in results:
+                    result_text += f"- {result.get('e.entry_id')}: {result.get('e.entry_name')} ({result.get('e.formula')})\n"
+                
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=result_text)
+                    ]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error finding entry types: {str(e)}")]
+                )
+        
+        elif name == "memgraph_trace_workflow":
+            entry_id = arguments["entry_id"]
+            direction = arguments.get("direction", "both")
+            max_depth = arguments.get("max_depth", 5)
+            
+            try:
+                if direction == "forward":
+                    query = f"""
+                    MATCH path = (start:Entry {{entry_id: $entry_id}})-[*1..{max_depth}]->(end:Entry)
+                    RETURN path
+                    LIMIT 10
+                    """
+                elif direction == "backward":
+                    query = f"""
+                    MATCH path = (start:Entry)-[*1..{max_depth}]->(end:Entry {{entry_id: $entry_id}})
+                    RETURN path
+                    LIMIT 10
+                    """
+                else:  # both
+                    query = f"""
+                    MATCH path = (start:Entry)-[*1..{max_depth}]-(end:Entry)
+                    WHERE start.entry_id = $entry_id OR end.entry_id = $entry_id
+                    RETURN path
+                    LIMIT 10
+                    """
+                
+                results = await memgraph_client.execute_query(query, {"entry_id": entry_id})
+                
+                trace_text = f"Workflow trace from entry {entry_id} ({direction}):\n\n"
+                trace_text += f"Found {len(results)} workflow paths\n"
+                
+                # Simplified path display
+                for i, result in enumerate(results[:5]):
+                    trace_text += f"Path {i+1}: {result}\n"
+                
+                return CallToolResult(
+                    content=[
+                        TextContent(type="text", text=trace_text)
+                    ]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error tracing workflow: {str(e)}")]
+                )
         
         else:
             return CallToolResult(
