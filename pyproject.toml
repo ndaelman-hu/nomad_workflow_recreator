@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nomad-workflow-recreator"
+version = "1.0.0"
+description = "MCP servers for NOMAD and Memgraph integration"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.25.0",
+    "pymgclient>=1.3.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "asyncio-compat>=0.1.0"
+]
+
+[project.scripts]
+nomad-mcp = "src.nomad_server:main"
+memgraph-mcp = "src.memgraph_server:main"

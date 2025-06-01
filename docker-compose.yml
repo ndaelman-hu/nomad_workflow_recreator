@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  memgraph:
+    image: memgraph/memgraph:latest
+    ports:
+      - "7687:7687"
+      - "7444:7444"  # HTTP endpoint
+    environment:
+      - MEMGRAPH_USER=
+      - MEMGRAPH_PASSWORD=
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    command: ["--log-level=TRACE"]
+
+  memgraph-lab:
+    image: memgraph/lab:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - memgraph
+    environment:
+      - MEMGRAPH_HOST=memgraph
+      - MEMGRAPH_PORT=7687
+
+volumes:
+  memgraph_data:
