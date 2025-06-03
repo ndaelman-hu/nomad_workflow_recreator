@@ -109,7 +109,8 @@ for batch in batches:
 ### Selective Data Extraction
 - **File structures**: Only sample ~20% of entries for file analysis
 - **Workflow metadata**: Use lightweight summary instead of full archive
-- **Relationship inference**: Based on metadata patterns, not file content
+- **File content reading**: On-demand reading of input and script files for deep workflow analysis
+- **Relationship inference**: Enhanced with file content analysis when needed
 
 ### Smart Sampling for Large Datasets
 ```python
@@ -167,4 +168,91 @@ nomad_preview_dataset(
 )
 ```
 
-This approach ensures reliable handling of both small research datasets and large public databases while maintaining fast response times and minimal resource usage.
+## 📁 File Content Reading Tools
+
+### On-Demand File Access
+Beyond metadata and file structure analysis, the system now provides tools for reading actual file contents when deeper workflow analysis is needed:
+
+#### Input File Reading (`nomad_read_input_files`)
+```python
+# Automatically identifies and reads input files
+file_contents = await nomad_client.get_input_files_content(entry_id, max_files=5)
+
+# Supported input file types:
+# - VASP: INCAR, POSCAR, KPOINTS, POTCAR
+# - General: *.in, *.inp, *.input
+# - CP2K, Gaussian, Quantum Espresso formats
+```
+
+#### Script File Reading (`nomad_read_script_files`)
+```python
+# Reads execution scripts and job submission files
+script_contents = await nomad_client.get_script_files_content(entry_id, max_files=3)
+
+# Supported script types:
+# - Shell scripts: *.sh, *.bash
+# - Job schedulers: *.slurm, *.pbs, *.job
+# - Python scripts: *.py
+```
+
+#### Workflow Dependency Analysis (`nomad_analyze_workflow_dependencies`)
+Advanced analysis that parses file contents to extract:
+- **Input Parameters**: Key-value pairs from input files
+- **Software Commands**: Detected computational software usage
+- **File Dependencies**: File operations and data flow
+- **Execution Steps**: Job submission and workflow control
+
+### Content Parsing Features
+
+#### Input File Parsing:
+- **VASP INCAR**: Parameter extraction (ENCUT, ISMEAR, etc.)
+- **POSCAR**: System name, lattice, atom types
+- **General Input**: Section-based parameter parsing
+
+#### Script Analysis:
+- **Software Detection**: VASP, CP2K, Gaussian, LAMMPS, etc.
+- **Job Control**: SLURM/PBS commands, MPI execution
+- **File Operations**: Copy, move, link operations
+- **Workflow Steps**: Sequential execution analysis
+
+### Strategic Use Cases
+
+#### 1. **Enhanced Relationship Inference**
+```python
+# Use file content to determine actual dependencies
+if "CHGCAR" in input_file_content and "SCF" in previous_entry_type:
+    relationship_type = "USES_CHARGE_DENSITY"
+```
+
+#### 2. **Parameter-Based Clustering**
+```python
+# Group entries by similar computational parameters
+if entry1_params["ENCUT"] == entry2_params["ENCUT"]:
+    add_relationship("SAME_CUTOFF_ENERGY")
+```
+
+#### 3. **Workflow Recreation**
+```python
+# Reconstruct execution order from script dependencies
+if "cp ../step1/CHGCAR ." in script_content:
+    create_dependency_edge("step1", current_entry, "PROVIDES_CHARGE")
+```
+
+### Content Reading Optimization
+
+#### Smart File Selection:
+- **Input files**: Limit to 5 most relevant files per entry
+- **Scripts**: Focus on 3 main execution scripts
+- **Size limits**: Truncate files >2KB for display, full content for analysis
+
+#### Content Caching:
+- **File structure cache**: Avoid re-reading directory listings
+- **Content cache**: Store frequently accessed input files
+- **Parameter extraction cache**: Save parsed parameters for reuse
+
+#### Error Handling:
+- **Binary files**: Graceful handling of non-text files
+- **Permissions**: Handle restricted file access
+- **Encoding**: Support various text encodings
+
+This comprehensive approach enables both lightweight overview analysis and deep workflow understanding through selective file content reading, maintaining performance while providing rich insights into computational workflows.
