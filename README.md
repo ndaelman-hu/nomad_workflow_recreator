@@ -56,6 +56,11 @@ summary = await orchestrator.reconstruct_dataset_workflow("dataset_name", "uploa
 - `nomad_get_entry_files` - Analyze file structures (no raw content)
 - `nomad_get_workflow_metadata` - Extract workflow and calculation metadata
 - `nomad_analyze_dataset_structure` - Overview of dataset composition
+- `nomad_preview_dataset` - Lightweight dataset preview (essential fields only)
+- `nomad_read_input_files` - Read input file contents (raw text)
+- `nomad_read_script_files` - Read script files (raw text)
+- `nomad_read_specific_file` - Read any specific file from an entry
+- `nomad_extract_file_data` - Extract raw file data bundle for AI analysis
 
 #### Graph Operations  
 - `memgraph_create_dataset_graph` - Build complete workflow graph from dataset
@@ -63,6 +68,10 @@ summary = await orchestrator.reconstruct_dataset_workflow("dataset_name", "uploa
 - `memgraph_analyze_workflow_patterns` - Analyze workflow dependencies
 - `memgraph_trace_workflow` - Trace complete workflows from any entry
 - `memgraph_find_workflow_entry_types` - Find specific calculation types
+- `memgraph_store_file_data` - Store raw file data in graph for AI analysis
+- `memgraph_add_file_content_nodes` - Add file contents as separate nodes
+- `memgraph_store_parsed_data` - Store AI-analyzed data (parameters, commands, etc.)
+- `memgraph_query_file_patterns` - Query files by extension, name, size patterns
 
 ## Architecture
 
