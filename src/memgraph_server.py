@@ -57,8 +57,9 @@ class MemgraphClient:
             # Convert record to dictionary
             result = {}
             for i, value in enumerate(record):
-                column_name = cursor.description[i][0] if cursor.description else f"col_{i}"
-                if hasattr(value, '_properties'):
+                # Fix: Access column name via .name attribute instead of subscription
+                column_name = cursor.description[i].name if cursor.description and len(cursor.description) > i else f"col_{i}"
+                if hasattr(value, 'properties'):
                     # Node or relationship
                     result[column_name] = {
                         'id': value.id if hasattr(value, 'id') else None,

@@ -279,6 +279,66 @@ class NomadClient:
         )
         response.raise_for_status()
         return response.json()
+    
+    async def get_entry_workflow_summary(self, entry_id: str) -> Dict[str, Any]:
+        """Get lightweight workflow summary for an entry"""
+        headers = {"Content-Type": "application/json"}
+        
+        # Use entries endpoint to get basic workflow info
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/entries/{entry_id}?include=results.method,workflow,run.program",
+                headers=headers
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # Extract workflow summary from entry data
+            results = data.get("data", {}).get("results", {})
+            workflow = data.get("data", {}).get("workflow", {})
+            run = data.get("data", {}).get("run", {})
+            
+            return {
+                "workflow_name": workflow.get("type", ""),
+                "programs": [run.get("program", {}).get("name", "")] if run.get("program") else [],
+                "methods": [results.get("method", {}).get("method_name", "")] if results.get("method") else [],
+                "system_info": {
+                    "formula": results.get("material", {}).get("chemical_formula_reduced", ""),
+                    "elements": results.get("material", {}).get("elements", [])
+                }
+            }
+        except Exception as e:
+            print(f"Error getting workflow summary for {entry_id}: {e}")
+            return {}
+    
+    async def get_entry_files_info(self, entry_id: str) -> Dict[str, Any]:
+        """Get file structure information for an entry"""
+        headers = {"Content-Type": "application/json"}
+        
+        # Use entries endpoint to get file information
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/entries/{entry_id}?include=files",
+                headers=headers
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # Extract file information
+            files = data.get("data", {}).get("files", [])
+            
+            return {
+                "data": {
+                    "archive": {
+                        "data": {
+                            "files": files
+                        }
+                    }
+                }
+            }
+        except Exception as e:
+            print(f"Error getting files info for {entry_id}: {e}")
+            return {"data": {"archive": {"data": {"files": []}}}}
 
 # Create MCP server
 app = Server("nomad-server")
