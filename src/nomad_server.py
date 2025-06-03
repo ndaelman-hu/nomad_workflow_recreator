@@ -43,8 +43,8 @@ class NomadClient:
     
     async def search_entries(self, query: Dict[str, Any]) -> Dict[str, Any]:
         """Search for entries in NOMAD database"""
-        headers = {}
-        if self.token:
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
             headers["Authorization"] = f"Bearer {self.token}"
         
         response = await self.client.post(
@@ -57,8 +57,8 @@ class NomadClient:
     
     async def get_entry_archive(self, entry_id: str, required: List[str] = None) -> Dict[str, Any]:
         """Get archive data for a specific entry"""
-        headers = {}
-        if self.token:
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
             headers["Authorization"] = f"Bearer {self.token}"
         
         query = {"entry_id": entry_id}
@@ -75,8 +75,8 @@ class NomadClient:
     
     async def download_raw_files(self, entry_ids: List[str]) -> bytes:
         """Download raw files for entries as zip"""
-        headers = {}
-        if self.token:
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
             headers["Authorization"] = f"Bearer {self.token}"
         
         response = await self.client.post(
@@ -87,60 +87,116 @@ class NomadClient:
         response.raise_for_status()
         return response.content
     
-    async def get_dataset_entries(self, dataset_id: str = None, upload_name: str = None, max_entries: int = None) -> Dict[str, Any]:
+    async def get_dataset_entries(self, dataset_id: str = None, upload_name: str = None, upload_id: str = None, max_entries: int = None) -> Dict[str, Any]:
         """Get all entries from a specific dataset/upload with pagination handling"""
-        headers = {}
-        if self.token:
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
             headers["Authorization"] = f"Bearer {self.token}"
         
         all_entries = []
-        page = 0
         page_size = 100  # Smaller page size for reliability
         total_entries = 0
         
-        while True:
-            query = {
-                "pagination": {
-                    "page_size": page_size,
-                    "page": page
-                }
-            }
-            
-            if dataset_id:
-                query["dataset_id"] = dataset_id
-            if upload_name:
-                query["upload_name"] = upload_name
-            
+        if upload_id:
+            # Use uploads endpoint - this returns upload info, not entries directly
             try:
-                response = await self.client.post(
-                    f"{self.base_url}/entries/query",
-                    json=query,
-                    headers=headers
-                )
+                response = await self.client.get(f"{self.base_url}/uploads/{upload_id}")
                 response.raise_for_status()
                 result = response.json()
                 
-                # Get entries from this page
-                page_entries = result.get("data", [])
-                all_entries.extend(page_entries)
+                # The uploads endpoint returns upload metadata, not entries
+                # We need to use the entries count and then query entries separately
+                upload_data = result.get("data", {})
+                total_entries = upload_data.get("entries", 0)
                 
-                # Update total count from first response
-                if page == 0:
-                    total_entries = result.get("pagination", {}).get("total", len(page_entries))
-                
-                # Check if we have all entries or hit max limit
-                if len(page_entries) < page_size or (max_entries and len(all_entries) >= max_entries):
-                    break
-                
-                page += 1
-                
-                # Safety limit to prevent infinite loops
-                if page > 1000:  # Max 100k entries
-                    break
+                # Now query entries using the entries/query endpoint with upload_id filter
+                page = 0
+                while True:
+                    query = {
+                        "pagination": {
+                            "page_size": page_size,
+                            "page": page
+                        },
+                        "query": {"upload_id": upload_id}
+                    }
                     
+                    try:
+                        entries_response = await self.client.post(
+                            f"{self.base_url}/entries/query",
+                            json=query,
+                            headers={"Content-Type": "application/json"}
+                        )
+                        entries_response.raise_for_status()
+                        entries_result = entries_response.json()
+                        
+                        # Get entries from this page
+                        page_entries = entries_result.get("data", [])
+                        all_entries.extend(page_entries)
+                        
+                        # Check if we have all entries or hit max limit
+                        if len(page_entries) < page_size or (max_entries and len(all_entries) >= max_entries):
+                            break
+                        
+                        page += 1
+                        
+                        # Safety limit to prevent infinite loops
+                        if page > 1000:  # Max 100k entries
+                            break
+                            
+                    except Exception as e:
+                        print(f"Error fetching entries page {page}: {e}")
+                        break
+                        
             except Exception as e:
-                print(f"Error fetching page {page}: {e}")
-                break
+                print(f"Error fetching upload info: {e}")
+                return {"data": [], "pagination": {"total": 0, "pages_fetched": 0}}
+        else:
+            # Use entries query endpoint for other identifiers
+            page = 0
+            
+            while True:
+                query = {
+                    "pagination": {
+                        "page_size": page_size,
+                        "page": page
+                    }
+                }
+                
+                if dataset_id:
+                    query["query"] = {"dataset_id": dataset_id}
+                elif upload_name:
+                    query["query"] = {"upload_name": upload_name}
+                
+                try:
+                    response = await self.client.post(
+                        f"{self.base_url}/entries/query",
+                        json=query,
+                        headers=headers
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    
+                    # Get entries from this page
+                    page_entries = result.get("data", [])
+                    all_entries.extend(page_entries)
+                    
+                    # Update total count from first response
+                    if page == 0:
+                        total_entries = result.get("pagination", {}).get("total", len(page_entries))
+                    
+                    # Check if we have all entries or hit max limit
+                    if len(page_entries) < page_size or (max_entries and len(all_entries) >= max_entries):
+                        break
+                    
+                    page += 1
+                    
+                    # Safety limit to prevent infinite loops
+                    if page > 1000:  # Max 100k entries
+                        break
+                        
+                except Exception as e:
+                    print(f"Error fetching page {page}: {e}")
+                    break
         
         # Trim to max_entries if specified
         if max_entries:
@@ -155,44 +211,51 @@ class NomadClient:
             }
         }
     
-    async def get_dataset_entries_lightweight(self, dataset_id: str = None, upload_name: str = None, max_entries: int = 50) -> Dict[str, Any]:
+    async def get_dataset_entries_lightweight(self, dataset_id: str = None, upload_name: str = None, upload_id: str = None, max_entries: int = 50) -> Dict[str, Any]:
         """Lightweight preview of dataset entries focusing on workflow essentials"""
-        headers = {}
-        if self.token:
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
             headers["Authorization"] = f"Bearer {self.token}"
         
-        # Request only essential fields for workflow analysis
-        query = {
-            "pagination": {"page_size": min(max_entries, 100)},
-            "required": {
-                "include": [
-                    "entry_id",
-                    "entry_name", 
-                    "entry_type",
-                    "formula",
-                    "upload_name",
-                    "processing_errors"
-                ]
+        if upload_id:
+            # Use uploads endpoint for upload_id - no auth for public uploads
+            response = await self.client.get(
+                f"{self.base_url}/uploads/{upload_id}"
+            )
+        else:
+            # Use entries query endpoint for other identifiers
+            query = {
+                "pagination": {"page_size": min(max_entries, 100)},
+                "required": {
+                    "include": [
+                        "entry_id",
+                        "entry_name", 
+                        "entry_type",
+                        "formula",
+                        "upload_name",
+                        "processing_errors"
+                    ]
+                }
             }
-        }
+            
+            if dataset_id:
+                query["query"] = {"dataset_id": dataset_id}
+            elif upload_name:
+                query["query"] = {"upload_name": upload_name}
+            
+            response = await self.client.post(
+                f"{self.base_url}/entries/query",
+                json=query,
+                headers=headers
+            )
         
-        if dataset_id:
-            query["dataset_id"] = dataset_id
-        if upload_name:
-            query["upload_name"] = upload_name
-        
-        response = await self.client.post(
-            f"{self.base_url}/entries/query",
-            json=query,
-            headers=headers
-        )
         response.raise_for_status()
         return response.json()
     
     async def get_entry_workflow_summary(self, entry_id: str) -> Dict[str, Any]:
         """Get lightweight workflow summary focusing on method and system info"""
-        headers = {}
-        if self.token:
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
             headers["Authorization"] = f"Bearer {self.token}"
         
         # Request only workflow-relevant sections
@@ -268,10 +331,122 @@ class NomadClient:
         
         return summary
     
+    async def get_file_content(self, entry_id: str, file_path: str) -> str:
+        """Get the content of a specific file from an entry"""
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
+            headers["Authorization"] = f"Bearer {self.token}"
+        
+        # Use the files API endpoint to get file content
+        response = await self.client.get(
+            f"{self.base_url}/entries/{entry_id}/raw/{file_path}",
+            headers=headers
+        )
+        response.raise_for_status()
+        
+        # Return as text (assumes most input/script files are text-based)
+        try:
+            return response.text
+        except Exception:
+            # If not text, return indication of binary content
+            return f"[Binary file: {len(response.content)} bytes]"
+    
+    async def get_input_files_content(self, entry_id: str, max_files: int = 5) -> Dict[str, str]:
+        """Get content of input files from an entry"""
+        # First get file structure to identify input files
+        files_data = await self.get_entry_files_info(entry_id)
+        files = files_data.get("data", {}).get("archive", {}).get("data", {}).get("files", [])
+        
+        # Identify input files
+        input_files = []
+        for file_info in files:
+            path = file_info.get("path", "").lower()
+            if any(ext in path for ext in ['.in', '.inp', '.input']) or any(name in path for name in ['poscar', 'kpoints', 'potcar', 'incar']):
+                input_files.append(file_info.get("path"))
+        
+        # Limit number of files to read
+        input_files = input_files[:max_files]
+        
+        # Read content of each input file
+        file_contents = {}
+        for file_path in input_files:
+            try:
+                content = await self.get_file_content(entry_id, file_path)
+                file_contents[file_path] = content
+            except Exception as e:
+                file_contents[file_path] = f"[Error reading file: {e}]"
+        
+        return file_contents
+    
+    async def get_script_files_content(self, entry_id: str, max_files: int = 3) -> Dict[str, str]:
+        """Get content of script files from an entry"""
+        # First get file structure to identify script files
+        files_data = await self.get_entry_files_info(entry_id)
+        files = files_data.get("data", {}).get("archive", {}).get("data", {}).get("files", [])
+        
+        # Identify script files
+        script_files = []
+        for file_info in files:
+            path = file_info.get("path", "").lower()
+            if any(ext in path for ext in ['.py', '.sh', '.slurm', '.pbs', '.job', '.batch']):
+                script_files.append(file_info.get("path"))
+        
+        # Limit number of files to read
+        script_files = script_files[:max_files]
+        
+        # Read content of each script file
+        file_contents = {}
+        for file_path in script_files:
+            try:
+                content = await self.get_file_content(entry_id, file_path)
+                file_contents[file_path] = content
+            except Exception as e:
+                file_contents[file_path] = f"[Error reading file: {e}]"
+        
+        return file_contents
+    
+    async def extract_file_data_for_analysis(self, entry_id: str) -> Dict[str, Any]:
+        """Extract raw file data without interpretation - let AI analyze patterns"""
+        data = {
+            "entry_id": entry_id,
+            "input_files": {},
+            "script_files": {},
+            "file_metadata": {}
+        }
+        
+        try:
+            # Get file structure first
+            files_info = await self.get_entry_files_info(entry_id)
+            files = files_info.get("data", {}).get("archive", {}).get("data", {}).get("files", [])
+            
+            # Store file metadata
+            for file_info in files:
+                path = file_info.get("path", "")
+                data["file_metadata"][path] = {
+                    "size": file_info.get("size", 0),
+                    "path": path,
+                    "extension": path.split('.')[-1].lower() if '.' in path else "",
+                    "filename": path.split('/')[-1],
+                    "directory": '/'.join(path.split('/')[:-1]) if '/' in path else ""
+                }
+            
+            # Get input file contents (raw, no parsing)
+            input_contents = await self.get_input_files_content(entry_id, max_files=5)
+            data["input_files"] = input_contents
+            
+            # Get script file contents (raw, no parsing)  
+            script_contents = await self.get_script_files_content(entry_id, max_files=3)
+            data["script_files"] = script_contents
+            
+        except Exception as e:
+            data["error"] = str(e)
+        
+        return data
+    
     async def get_entry_files_info(self, entry_id: str) -> Dict[str, Any]:
         """Get file structure information for an entry without downloading content"""
-        headers = {}
-        if self.token:
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
             headers["Authorization"] = f"Bearer {self.token}"
         
         query = {
@@ -289,8 +464,8 @@ class NomadClient:
     
     async def get_workflow_metadata(self, entry_id: str) -> Dict[str, Any]:
         """Extract workflow-relevant metadata from entry"""
-        headers = {}
-        if self.token:
+        headers = {"Content-Type": "application/json"}
+        if self.token and self.token.strip():
             headers["Authorization"] = f"Bearer {self.token}"
         
         query = {
@@ -501,6 +676,76 @@ async def list_tools() -> List[Tool]:
                         "description": "Maximum number of entries to retrieve (for large datasets)"
                     }
                 }
+            }
+        ),
+        Tool(
+            name="nomad_read_input_files",
+            description="Read content of input files from a NOMAD entry for workflow analysis",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "NOMAD entry ID"
+                    },
+                    "max_files": {
+                        "type": "number",
+                        "default": 5,
+                        "description": "Maximum number of input files to read"
+                    }
+                },
+                "required": ["entry_id"]
+            }
+        ),
+        Tool(
+            name="nomad_read_script_files",
+            description="Read content of script files from a NOMAD entry to understand execution workflow",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "NOMAD entry ID"
+                    },
+                    "max_files": {
+                        "type": "number",
+                        "default": 3,
+                        "description": "Maximum number of script files to read"
+                    }
+                },
+                "required": ["entry_id"]
+            }
+        ),
+        Tool(
+            name="nomad_read_specific_file",
+            description="Read content of a specific file from a NOMAD entry",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "NOMAD entry ID"
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the specific file within the entry"
+                    }
+                },
+                "required": ["entry_id", "file_path"]
+            }
+        ),
+        Tool(
+            name="nomad_extract_file_data",
+            description="Extract raw file data (content + metadata) for AI analysis - no interpretation by MCP",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "NOMAD entry ID"
+                    }
+                },
+                "required": ["entry_id"]
             }
         )
     ]
@@ -936,6 +1181,163 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
         except Exception as e:
             return CallToolResult(
                 content=[TextContent(type="text", text=f"Error retrieving paginated entries: {str(e)}")]
+            )
+    
+    elif name == "nomad_read_input_files":
+        entry_id = arguments["entry_id"]
+        max_files = arguments.get("max_files", 5)
+        
+        try:
+            file_contents = await nomad_client.get_input_files_content(entry_id, max_files)
+            
+            if not file_contents:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"No input files found for entry {entry_id}")]
+                )
+            
+            result_text = f"Input Files for {entry_id}:\n\n"
+            
+            for file_path, content in file_contents.items():
+                result_text += f"=== {file_path} ===\n"
+                if content.startswith("[Error") or content.startswith("[Binary"):
+                    result_text += f"{content}\n\n"
+                else:
+                    # Truncate very long files
+                    if len(content) > 2000:
+                        result_text += f"{content[:2000]}...\n[Truncated: {len(content)} total characters]\n\n"
+                    else:
+                        result_text += f"{content}\n\n"
+            
+            return CallToolResult(
+                content=[TextContent(type="text", text=result_text)]
+            )
+            
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error reading input files: {str(e)}")]
+            )
+    
+    elif name == "nomad_read_script_files":
+        entry_id = arguments["entry_id"]
+        max_files = arguments.get("max_files", 3)
+        
+        try:
+            file_contents = await nomad_client.get_script_files_content(entry_id, max_files)
+            
+            if not file_contents:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"No script files found for entry {entry_id}")]
+                )
+            
+            result_text = f"Script Files for {entry_id}:\n\n"
+            
+            for file_path, content in file_contents.items():
+                result_text += f"=== {file_path} ===\n"
+                if content.startswith("[Error") or content.startswith("[Binary"):
+                    result_text += f"{content}\n\n"
+                else:
+                    # Truncate very long files
+                    if len(content) > 1500:
+                        result_text += f"{content[:1500]}...\n[Truncated: {len(content)} total characters]\n\n"
+                    else:
+                        result_text += f"{content}\n\n"
+            
+            return CallToolResult(
+                content=[TextContent(type="text", text=result_text)]
+            )
+            
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error reading script files: {str(e)}")]
+            )
+    
+    elif name == "nomad_read_specific_file":
+        entry_id = arguments["entry_id"]
+        file_path = arguments["file_path"]
+        
+        try:
+            content = await nomad_client.get_file_content(entry_id, file_path)
+            
+            result_text = f"Content of {file_path} from entry {entry_id}:\n\n"
+            
+            if content.startswith("[Error") or content.startswith("[Binary"):
+                result_text += content
+            else:
+                # Truncate very long files
+                if len(content) > 3000:
+                    result_text += f"{content[:3000]}...\n[Truncated: {len(content)} total characters]"
+                else:
+                    result_text += content
+            
+            return CallToolResult(
+                content=[TextContent(type="text", text=result_text)]
+            )
+            
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error reading file {file_path}: {str(e)}")]
+            )
+    
+    elif name == "nomad_analyze_workflow_dependencies":
+        entry_id = arguments["entry_id"]
+        
+        try:
+            analysis = await nomad_client.analyze_workflow_dependencies(entry_id)
+            
+            result_text = f"Workflow Dependencies Analysis for {entry_id}:\n\n"
+            
+            if "error" in analysis:
+                result_text += f"Error: {analysis['error']}\n"
+            else:
+                # Input parameters
+                if analysis["input_parameters"]:
+                    result_text += "📋 INPUT PARAMETERS:\n"
+                    for file_path, params in analysis["input_parameters"].items():
+                        result_text += f"  {file_path}:\n"
+                        for key, value in list(params.items())[:10]:  # Limit to 10 params per file
+                            result_text += f"    {key}: {value}\n"
+                        if len(params) > 10:
+                            result_text += f"    ... and {len(params) - 10} more parameters\n"
+                        result_text += "\n"
+                
+                # Software commands
+                if analysis["software_commands"]:
+                    result_text += "💻 SOFTWARE COMMANDS:\n"
+                    for cmd in analysis["software_commands"][:10]:  # Limit to 10 commands
+                        result_text += f"  Line {cmd['line']}: {cmd['command']} (software: {cmd['software']})\n"
+                    if len(analysis["software_commands"]) > 10:
+                        result_text += f"  ... and {len(analysis['software_commands']) - 10} more commands\n"
+                    result_text += "\n"
+                
+                # File dependencies
+                if analysis["dependencies"]:
+                    result_text += "📁 FILE DEPENDENCIES:\n"
+                    for dep in analysis["dependencies"][:10]:
+                        result_text += f"  Line {dep['line']}: {dep['operation']} ({dep['type']})\n"
+                    if len(analysis["dependencies"]) > 10:
+                        result_text += f"  ... and {len(analysis['dependencies']) - 10} more dependencies\n"
+                    result_text += "\n"
+                
+                # Workflow steps
+                if analysis["workflow_steps"]:
+                    result_text += "🔄 WORKFLOW STEPS:\n"
+                    for step in analysis["workflow_steps"][:10]:
+                        result_text += f"  Line {step['line']}: {step['step']} ({step['type']})\n"
+                    if len(analysis["workflow_steps"]) > 10:
+                        result_text += f"  ... and {len(analysis['workflow_steps']) - 10} more steps\n"
+                    result_text += "\n"
+                
+                if not any([analysis["input_parameters"], analysis["software_commands"], 
+                           analysis["dependencies"], analysis["workflow_steps"]]):
+                    result_text += "No workflow dependencies detected from available files.\n"
+            
+            return CallToolResult(
+                content=[TextContent(type="text", text=result_text)]
+            )
+            
+        except Exception as e:
+            return CallToolResult(
+                content=[TextContent(type="text", text=f"Error extracting file data: {str(e)}")]
             )
     
     else:

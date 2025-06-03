@@ -31,7 +31,7 @@ class WorkflowOrchestrator:
         self.nomad_client = NomadClient()
         self.memgraph_client = MemgraphClient()
     
-    async def reconstruct_dataset_workflow(self, dataset_identifier: str, identifier_type: str = "upload_name") -> Dict[str, Any]:
+    async def reconstruct_dataset_workflow(self, dataset_identifier: str, identifier_type: str = "upload_id") -> Dict[str, Any]:
         """
         Complete workflow reconstruction from NOMAD dataset to Memgraph
         
@@ -47,6 +47,8 @@ class WorkflowOrchestrator:
         print(f"🔍 Previewing NOMAD dataset: {dataset_identifier}")
         if identifier_type == "dataset_id":
             preview_data = await self.nomad_client.get_dataset_entries_lightweight(dataset_id=dataset_identifier, max_entries=50)
+        elif identifier_type == "upload_id":
+            preview_data = await self.nomad_client.get_dataset_entries_lightweight(upload_id=dataset_identifier, max_entries=50)
         else:
             preview_data = await self.nomad_client.get_dataset_entries_lightweight(upload_name=dataset_identifier, max_entries=50)
         
@@ -66,6 +68,8 @@ class WorkflowOrchestrator:
         print(f"🔍 Extracting entries from NOMAD dataset: {dataset_identifier}")
         if identifier_type == "dataset_id":
             dataset_data = await self.nomad_client.get_dataset_entries(dataset_id=dataset_identifier, max_entries=max_entries)
+        elif identifier_type == "upload_id":
+            dataset_data = await self.nomad_client.get_dataset_entries(upload_id=dataset_identifier, max_entries=max_entries)
         else:
             dataset_data = await self.nomad_client.get_dataset_entries(upload_name=dataset_identifier, max_entries=max_entries)
         
@@ -405,14 +409,15 @@ class WorkflowOrchestrator:
 
 async def main():
     """Example usage of the workflow orchestrator"""
+    import sys
+    
     orchestrator = WorkflowOrchestrator()
     
-    # Example: Reconstruct workflow from a public dataset
-    # Replace with actual dataset identifier
-    dataset_id = "example_dataset"
+    # Get dataset name from command line or use default
+    dataset_name = sys.argv[1] if len(sys.argv) > 1 else "example_dataset"
     
     try:
-        summary = await orchestrator.reconstruct_dataset_workflow(dataset_id, "upload_name")
+        summary = await orchestrator.reconstruct_dataset_workflow(dataset_name, "upload_id")
         print(f"\n📋 Workflow Reconstruction Summary:")
         print(f"   Dataset: {summary['dataset_id']}")
         print(f"   Entries processed: {summary['entries_processed']}")

@@ -355,6 +355,97 @@ async def list_tools() -> List[Tool]:
                 },
                 "required": ["entry_id"]
             }
+        ),
+        Tool(
+            name="memgraph_store_file_data",
+            description="Store raw file data from NOMAD entry in graph for AI analysis",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "NOMAD entry ID"
+                    },
+                    "file_data": {
+                        "type": "object",
+                        "description": "Raw file data with metadata, input files, and script files"
+                    }
+                },
+                "required": ["entry_id", "file_data"]
+            }
+        ),
+        Tool(
+            name="memgraph_add_file_content_nodes",
+            description="Add file content as separate nodes connected to entry",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "Parent entry ID"
+                    },
+                    "files": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {"type": "string"},
+                                "content": {"type": "string"},
+                                "file_type": {"type": "string"},
+                                "size": {"type": "number"}
+                            }
+                        },
+                        "description": "List of files to add as nodes"
+                    }
+                },
+                "required": ["entry_id", "files"]
+            }
+        ),
+        Tool(
+            name="memgraph_store_parsed_data",
+            description="Store AI-parsed data (parameters, commands, etc.) as properties or separate nodes",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "entry_id": {
+                        "type": "string",
+                        "description": "Entry ID"
+                    },
+                    "parsed_data": {
+                        "type": "object",
+                        "description": "AI-analyzed data to store"
+                    },
+                    "data_type": {
+                        "type": "string",
+                        "enum": ["parameters", "commands", "dependencies", "custom"],
+                        "description": "Type of parsed data"
+                    }
+                },
+                "required": ["entry_id", "parsed_data", "data_type"]
+            }
+        ),
+        Tool(
+            name="memgraph_query_file_patterns",
+            description="Query files by patterns for AI analysis (find similar files, extensions, etc.)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "pattern_type": {
+                        "type": "string",
+                        "enum": ["extension", "filename", "content_similarity", "size_range"],
+                        "description": "Type of pattern to search for"
+                    },
+                    "pattern_value": {
+                        "type": "string",
+                        "description": "Pattern value (e.g., '.inp', 'INCAR', etc.)"
+                    },
+                    "dataset_id": {
+                        "type": "string",
+                        "description": "Optional dataset to limit search"
+                    }
+                },
+                "required": ["pattern_type", "pattern_value"]
+            }
         )
     ]
 
@@ -758,6 +849,254 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
             except Exception as e:
                 return CallToolResult(
                     content=[TextContent(type="text", text=f"Error tracing workflow: {str(e)}")]
+                )
+        
+        elif name == "memgraph_store_file_data":
+            entry_id = arguments["entry_id"]
+            file_data = arguments["file_data"]
+            
+            try:
+                # Store file metadata as properties on the entry
+                file_metadata = file_data.get("file_metadata", {})
+                if file_metadata:
+                    metadata_query = """
+                    MATCH (e:Entry {entry_id: $entry_id})
+                    SET e.file_count = $file_count,
+                        e.file_extensions = $extensions,
+                        e.total_file_size = $total_size
+                    RETURN e
+                    """
+                    
+                    extensions = list(set([meta.get("extension", "") for meta in file_metadata.values() if meta.get("extension")]))
+                    total_size = sum([meta.get("size", 0) for meta in file_metadata.values()])
+                    
+                    await memgraph_client.execute_query(metadata_query, {
+                        "entry_id": entry_id,
+                        "file_count": len(file_metadata),
+                        "extensions": extensions,
+                        "total_size": total_size
+                    })
+                
+                return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=f"Stored file metadata for entry {entry_id}: {len(file_metadata)} files, extensions: {extensions}"
+                        )
+                    ]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error storing file data: {str(e)}")]
+                )
+        
+        elif name == "memgraph_add_file_content_nodes":
+            entry_id = arguments["entry_id"]
+            files = arguments["files"]
+            
+            try:
+                nodes_created = 0
+                for file_info in files:
+                    file_query = """
+                    MATCH (e:Entry {entry_id: $entry_id})
+                    CREATE (f:File {
+                        file_path: $file_path,
+                        content: $content,
+                        file_type: $file_type,
+                        size: $size,
+                        filename: $filename,
+                        extension: $extension
+                    })
+                    CREATE (e)-[:HAS_FILE]->(f)
+                    RETURN f
+                    """
+                    
+                    file_path = file_info.get("file_path", "")
+                    await memgraph_client.execute_query(file_query, {
+                        "entry_id": entry_id,
+                        "file_path": file_path,
+                        "content": file_info.get("content", ""),
+                        "file_type": file_info.get("file_type", "unknown"),
+                        "size": file_info.get("size", 0),
+                        "filename": file_path.split('/')[-1] if '/' in file_path else file_path,
+                        "extension": file_path.split('.')[-1].lower() if '.' in file_path else ""
+                    })
+                    nodes_created += 1
+                
+                return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=f"Created {nodes_created} file nodes for entry {entry_id}"
+                        )
+                    ]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error creating file nodes: {str(e)}")]
+                )
+        
+        elif name == "memgraph_store_parsed_data":
+            entry_id = arguments["entry_id"]
+            parsed_data = arguments["parsed_data"]
+            data_type = arguments["data_type"]
+            
+            try:
+                if data_type == "parameters":
+                    # Store as parameter nodes
+                    for param_name, param_value in parsed_data.items():
+                        param_query = """
+                        MATCH (e:Entry {entry_id: $entry_id})
+                        CREATE (p:Parameter {
+                            name: $param_name,
+                            value: $param_value,
+                            data_type: 'parameter'
+                        })
+                        CREATE (e)-[:HAS_PARAMETER]->(p)
+                        RETURN p
+                        """
+                        await memgraph_client.execute_query(param_query, {
+                            "entry_id": entry_id,
+                            "param_name": str(param_name),
+                            "param_value": str(param_value)
+                        })
+                
+                elif data_type == "commands":
+                    # Store as command nodes
+                    for i, command in enumerate(parsed_data.get("commands", [])):
+                        cmd_query = """
+                        MATCH (e:Entry {entry_id: $entry_id})
+                        CREATE (c:Command {
+                            command_text: $command_text,
+                            line_number: $line_number,
+                            sequence: $sequence
+                        })
+                        CREATE (e)-[:HAS_COMMAND]->(c)
+                        RETURN c
+                        """
+                        await memgraph_client.execute_query(cmd_query, {
+                            "entry_id": entry_id,
+                            "command_text": str(command),
+                            "line_number": 0,  # AI can provide this
+                            "sequence": i
+                        })
+                
+                elif data_type == "dependencies":
+                    # Store as dependency relationships
+                    for dependency in parsed_data.get("dependencies", []):
+                        dep_query = """
+                        MATCH (e:Entry {entry_id: $entry_id})
+                        CREATE (d:Dependency {
+                            dependency_info: $dep_info,
+                            dependency_type: $dep_type
+                        })
+                        CREATE (e)-[:HAS_DEPENDENCY]->(d)
+                        RETURN d
+                        """
+                        await memgraph_client.execute_query(dep_query, {
+                            "entry_id": entry_id,
+                            "dep_info": str(dependency),
+                            "dep_type": "file_dependency"
+                        })
+                
+                else:  # custom
+                    # Store as generic data nodes
+                    custom_query = """
+                    MATCH (e:Entry {entry_id: $entry_id})
+                    CREATE (d:Data {
+                        data_content: $data_content,
+                        data_type: $data_type
+                    })
+                    CREATE (e)-[:HAS_DATA]->(d)
+                    RETURN d
+                    """
+                    await memgraph_client.execute_query(custom_query, {
+                        "entry_id": entry_id,
+                        "data_content": str(parsed_data),
+                        "data_type": data_type
+                    })
+                
+                return CallToolResult(
+                    content=[
+                        TextContent(
+                            type="text",
+                            text=f"Stored {data_type} data for entry {entry_id}"
+                        )
+                    ]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error storing parsed data: {str(e)}")]
+                )
+        
+        elif name == "memgraph_query_file_patterns":
+            pattern_type = arguments["pattern_type"]
+            pattern_value = arguments["pattern_value"]
+            dataset_id = arguments.get("dataset_id")
+            
+            try:
+                if pattern_type == "extension":
+                    if dataset_id:
+                        query = """
+                        MATCH (d:Dataset {dataset_id: $dataset_id})-[:CONTAINS]->(e:Entry)-[:HAS_FILE]->(f:File)
+                        WHERE f.extension = $pattern_value
+                        RETURN e.entry_id, f.file_path, f.filename, f.size
+                        LIMIT 20
+                        """
+                        params = {"dataset_id": dataset_id, "pattern_value": pattern_value}
+                    else:
+                        query = """
+                        MATCH (e:Entry)-[:HAS_FILE]->(f:File)
+                        WHERE f.extension = $pattern_value
+                        RETURN e.entry_id, f.file_path, f.filename, f.size
+                        LIMIT 20
+                        """
+                        params = {"pattern_value": pattern_value}
+                
+                elif pattern_type == "filename":
+                    query = """
+                    MATCH (e:Entry)-[:HAS_FILE]->(f:File)
+                    WHERE f.filename CONTAINS $pattern_value
+                    RETURN e.entry_id, f.file_path, f.filename, f.size
+                    LIMIT 20
+                    """
+                    params = {"pattern_value": pattern_value}
+                
+                elif pattern_type == "size_range":
+                    # Assume pattern_value is like "1000-5000" for size range
+                    min_size, max_size = map(int, pattern_value.split('-'))
+                    query = """
+                    MATCH (e:Entry)-[:HAS_FILE]->(f:File)
+                    WHERE f.size >= $min_size AND f.size <= $max_size
+                    RETURN e.entry_id, f.file_path, f.filename, f.size
+                    LIMIT 20
+                    """
+                    params = {"min_size": min_size, "max_size": max_size}
+                
+                else:
+                    return CallToolResult(
+                        content=[TextContent(type="text", text=f"Pattern type '{pattern_type}' not yet implemented")]
+                    )
+                
+                results = await memgraph_client.execute_query(query, params)
+                
+                result_text = f"Files matching {pattern_type} pattern '{pattern_value}':\n\n"
+                for result in results:
+                    result_text += f"- {result.get('e.entry_id')}: {result.get('f.file_path')} ({result.get('f.size', 0)} bytes)\n"
+                
+                if not results:
+                    result_text += "No matching files found."
+                
+                return CallToolResult(
+                    content=[TextContent(type="text", text=result_text)]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error querying file patterns: {str(e)}")]
                 )
         
         else:
