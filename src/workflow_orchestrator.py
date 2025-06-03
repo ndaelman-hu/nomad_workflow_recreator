@@ -10,7 +10,7 @@ import asyncio
 import json
 from typing import Dict, List, Any, Tuple
 from dataclasses import dataclass
-from nomad_server import NomadClient
+from nomad_server_improved import NomadClient
 from memgraph_server import MemgraphClient
 
 @dataclass
@@ -46,11 +46,13 @@ class WorkflowOrchestrator:
         # Step 1: Preview dataset first to understand scope
         print(f"🔍 Previewing NOMAD dataset: {dataset_identifier}")
         if identifier_type == "dataset_id":
-            preview_data = await self.nomad_client.get_dataset_entries_lightweight(dataset_id=dataset_identifier, max_entries=50)
+            preview_data = await self.nomad_client.get_dataset_entries(dataset_id=dataset_identifier, max_entries=50)
         elif identifier_type == "upload_id":
-            preview_data = await self.nomad_client.get_dataset_entries_lightweight(upload_id=dataset_identifier, max_entries=50)
+            preview_data = await self.nomad_client.get_upload_entries(upload_id=dataset_identifier, max_entries=50)
         else:
-            preview_data = await self.nomad_client.get_dataset_entries_lightweight(upload_name=dataset_identifier, max_entries=50)
+            # For upload_name, we'll need to search for it
+            search_query = {"query": {"upload_name": dataset_identifier}, "pagination": {"page_size": 50}}
+            preview_data = await self.nomad_client.search_entries(search_query)
         
         preview_entries = preview_data.get("data", [])
         total_estimated = preview_data.get("pagination", {}).get("total", len(preview_entries))
@@ -69,9 +71,13 @@ class WorkflowOrchestrator:
         if identifier_type == "dataset_id":
             dataset_data = await self.nomad_client.get_dataset_entries(dataset_id=dataset_identifier, max_entries=max_entries)
         elif identifier_type == "upload_id":
-            dataset_data = await self.nomad_client.get_dataset_entries(upload_id=dataset_identifier, max_entries=max_entries)
+            dataset_data = await self.nomad_client.get_upload_entries(upload_id=dataset_identifier, max_entries=max_entries)
         else:
-            dataset_data = await self.nomad_client.get_dataset_entries(upload_name=dataset_identifier, max_entries=max_entries)
+            # For upload_name, use search
+            search_query = {"query": {"upload_name": dataset_identifier}}
+            if max_entries:
+                search_query["pagination"] = {"page_size": min(max_entries, 100)}
+            dataset_data = await self.nomad_client.search_entries(search_query)
         
         entries = dataset_data.get("data", [])
         pagination_info = dataset_data.get("pagination", {})

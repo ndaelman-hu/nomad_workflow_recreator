@@ -110,15 +110,14 @@ class NomadClient:
                 total_entries = upload_data.get("entries", 0)
                 
                 # Now query entries using the entries/query endpoint with upload_id filter
-                page = 0
+                page_after_value = None
                 while True:
                     query = {
-                        "pagination": {
-                            "page_size": page_size,
-                            "page": page
-                        },
+                        "pagination": {"page_size": page_size},
                         "query": {"upload_id": upload_id}
                     }
+                    if page_after_value:
+                        query["pagination"]["page_after_value"] = page_after_value
                     
                     try:
                         entries_response = await self.client.post(
@@ -137,14 +136,13 @@ class NomadClient:
                         if len(page_entries) < page_size or (max_entries and len(all_entries) >= max_entries):
                             break
                         
-                        page += 1
-                        
-                        # Safety limit to prevent infinite loops
-                        if page > 1000:  # Max 100k entries
+                        # Get next page token
+                        page_after_value = entries_result.get("pagination", {}).get("next_page_after_value")
+                        if not page_after_value:
                             break
                             
                     except Exception as e:
-                        print(f"Error fetching entries page {page}: {e}")
+                        print(f"Error fetching entries: {e}")
                         break
                         
             except Exception as e:
@@ -152,15 +150,14 @@ class NomadClient:
                 return {"data": [], "pagination": {"total": 0, "pages_fetched": 0}}
         else:
             # Use entries query endpoint for other identifiers
-            page = 0
+            page_after_value = None
             
             while True:
                 query = {
-                    "pagination": {
-                        "page_size": page_size,
-                        "page": page
-                    }
+                    "pagination": {"page_size": page_size}
                 }
+                if page_after_value:
+                    query["pagination"]["page_after_value"] = page_after_value
                 
                 if dataset_id:
                     query["query"] = {"dataset_id": dataset_id}
@@ -181,21 +178,20 @@ class NomadClient:
                     all_entries.extend(page_entries)
                     
                     # Update total count from first response
-                    if page == 0:
+                    if total_entries == 0:
                         total_entries = result.get("pagination", {}).get("total", len(page_entries))
                     
                     # Check if we have all entries or hit max limit
                     if len(page_entries) < page_size or (max_entries and len(all_entries) >= max_entries):
                         break
                     
-                    page += 1
-                    
-                    # Safety limit to prevent infinite loops
-                    if page > 1000:  # Max 100k entries
+                    # Get next page token
+                    page_after_value = result.get("pagination", {}).get("next_page_after_value")
+                    if not page_after_value:
                         break
                         
                 except Exception as e:
-                    print(f"Error fetching page {page}: {e}")
+                    print(f"Error fetching entries: {e}")
                     break
         
         # Trim to max_entries if specified
