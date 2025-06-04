@@ -1,0 +1,27 @@
+{
+  "name": "NOMAD Workflow Analyzer",
+  "version": "1.0.0",
+  "description": "Claude Code configuration for NOMAD materials science workflow analysis",
+  "mcpServers": {
+    "memgraph": {
+      "command": "python",
+      "args": ["src/memgraph_server.py"],
+      "cwd": "/home/nathan/Documents/nomad_workflow_recreator",
+      "env": {
+        "MEMGRAPH_HOST": "localhost",
+        "MEMGRAPH_PORT": "7687",
+        "MEMGRAPH_USERNAME": "",
+        "MEMGRAPH_PASSWORD": ""
+      }
+    },
+    "nomad": {
+      "command": "python", 
+      "args": ["src/nomad_server_improved.py"],
+      "cwd": "/home/nathan/Documents/nomad_workflow_recreator",
+      "env": {
+        "NOMAD_TOKEN": ""
+      }
+    }
+  },
+  "defaultPrompt": "You are a materials science expert analyzing NOMAD computational chemistry data. Use the Memgraph MCP tools to explore the dataset 'YDXZgPooRb-31Niq48ODPA' and create intelligent workflow relationships based on your knowledge of computational chemistry and materials science."
+}
