@@ -334,7 +334,7 @@ class WorkflowOrchestrator:
                 print(f"      ✅ Sorted entries")
                 
                 # Create sequential relationships for likely workflow steps
-                print(f"      Creating relationships for {len(sorted_entries)} sorted entries")
+                print(f"      Creating {len(sorted_entries) - 1} sequential relationships")
                 for i in range(len(sorted_entries) - 1):
                     current_entry = sorted_entries[i]
                     next_entry = sorted_entries[i + 1]
@@ -491,15 +491,17 @@ class WorkflowOrchestrator:
         """Create relationships in Memgraph"""
         print(f"  Creating {len(relationships)} relationships...")
         for i, rel in enumerate(relationships):
+            # Format query outside try block
+            rel_type = rel["relationship_type"]
+            rel_query = """
+            MATCH (from:Entry {{entry_id: $from_id}})
+            MATCH (to:Entry {{entry_id: $to_id}})
+            CREATE (from)-[r:{rel_type}]->(to)
+            SET r += $properties
+            RETURN r
+            """.format(rel_type=rel_type)
+            
             try:
-                rel_query = """
-                MATCH (from:Entry {entry_id: $from_id})
-                MATCH (to:Entry {entry_id: $to_id})
-                CREATE (from)-[r:`{rel_type}`]->(to)
-                SET r += $properties
-                RETURN r
-                """.format(rel_type=rel["relationship_type"])
-                
                 await self.memgraph_client.execute_query(rel_query, {
                     "from_id": rel["from_entry_id"],
                     "to_id": rel["to_entry_id"],
@@ -511,7 +513,6 @@ class WorkflowOrchestrator:
                     
             except Exception as e:
                 print(f"    ⚠️  Error creating relationship {i}: {e}")
-                print(f"       Relationship data: {rel}")
                 # Continue with other relationships
 
 async def main():

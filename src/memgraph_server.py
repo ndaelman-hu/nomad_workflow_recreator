@@ -39,6 +39,8 @@ class MemgraphClient:
                 password=self.password,
                 lazy=False
             )
+            # Enable autocommit to ensure transactions are committed
+            self.conn.autocommit = True
             return True
         except Exception as e:
             print(f"Failed to connect to Memgraph: {e}")
