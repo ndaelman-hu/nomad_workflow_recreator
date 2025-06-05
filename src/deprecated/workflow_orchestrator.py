@@ -2,6 +2,15 @@
 """
 Workflow Orchestrator
 
+DEPRECATED: This file uses hardcoded relationship rules and has been superseded
+by the MCP-based architecture with Claude-driven analysis.
+
+Use run_analysis.sh instead for intelligent workflow reconstruction.
+
+See src/deprecated/README.md for migration guide.
+
+---
+
 Coordinates NOMAD data extraction and Memgraph graph construction
 for complete workflow recreation from public datasets.
 """

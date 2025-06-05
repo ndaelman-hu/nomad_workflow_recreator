@@ -2,6 +2,15 @@
 """
 Claude-Driven Workflow Orchestrator
 
+DEPRECATED: This direct orchestration approach has been replaced by the MCP
+server architecture which provides better separation of concerns and flexibility.
+
+Use run_analysis.sh with MCP servers instead for Claude-driven analysis.
+
+See src/deprecated/README.md for migration guide.
+
+---
+
 Delegates all intelligent analysis to Claude while providing data access tools.
 The orchestrator simply provides data and executes Claude's decisions.
 """
