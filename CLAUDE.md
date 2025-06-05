@@ -8,8 +8,9 @@ The nomad_workflow_recreator provides MCP (Model Context Protocol) servers for a
 
 ## Repository Structure
 
-- `src/nomad_server.py` - MCP server for NOMAD API integration
-- `src/memgraph_server.py` - MCP server for Memgraph database operations
+- `src/nomad_server_enhanced.py` - Enhanced MCP server for NOMAD with dataset initialization
+- `src/memgraph_server_enhanced.py` - Enhanced MCP server with analysis tools
+- `claude_config.json` - Claude Code configuration with enhanced servers
 - `requirements.txt` - Python dependencies
 - `pyproject.toml` - Project configuration
 - `.env.example` - Environment variables template
@@ -31,16 +32,16 @@ Copy `.env.example` to `.env` and configure:
 - `NOMAD_TOKEN` - OAuth token from NOMAD-lab.eu
 - `MEMGRAPH_HOST/PORT` - Memgraph database connection details
 
-### Running MCP Servers
+### Running Enhanced MCP Servers
 ```bash
 # Activate virtual environment first
 source .venv/bin/activate
 
-# NOMAD MCP server
-python src/nomad_server.py
+# Enhanced NOMAD MCP server
+python src/nomad_server_enhanced.py
 
-# Memgraph MCP server  
-python src/memgraph_server.py
+# Enhanced Memgraph MCP server  
+python src/memgraph_server_enhanced.py
 
 # Claude-driven workflow orchestrator
 python src/claude_orchestrator.py
@@ -82,25 +83,21 @@ This will:
 
 ### Manual Analysis Options
 
-#### Quick Queries
-```bash
-source .venv/bin/activate
-python quick_queries.py formulas
-python quick_queries.py relationships
-python quick_queries.py periodic_trends
-```
+#### Enhanced MCP Tools
 
-#### Interactive Analysis
-```bash
-source .venv/bin/activate
-python interactive_analysis.py
-```
+#### NOMAD Server Tools
+- `list_datasets` - Discover available NOMAD datasets
+- `initialize_dataset_workflow` - Set up new dataset for analysis
+- `analyze_dataset_formulas` - Analyze chemical patterns
+- `get_dataset_workflow_patterns` - Extract workflow patterns
 
-#### Direct MCP Usage
-Use Claude Code manually with the Memgraph MCP tools:
-- `memgraph_query` - Execute custom Cypher queries
-- `memgraph_find_nodes` - Find specific entries
-- `memgraph_create_relationship` - Create workflow relationships
+#### Memgraph Analysis Tools  
+- `memgraph_analyze_periodic_trends` - Create periodic relationships
+- `memgraph_analyze_cluster_patterns` - Identify cluster series
+- `memgraph_quick_analysis` - Run predefined analyses
+- `memgraph_interactive_explore` - Interactive exploration
+- `memgraph_clear_dataset` - Clean up datasets
+- `memgraph_get_dataset_stats` - Dataset statistics
 
 ## Prerequisites for Automated Analysis
 
@@ -130,26 +127,23 @@ See `CITATIONS.md` for complete citation information.
 
 ## Architecture
 
-### NOMAD Server
+### Enhanced NOMAD Server (`nomad_server_enhanced.py`)
 Provides tools for:
-- Searching materials science entries by formula, elements, properties
-- Retrieving detailed archive data for specific entries
-- Authentication management with NOMAD API
+- **Dataset Management**: List, initialize, and analyze datasets
+- **Formula Analysis**: Chemical patterns, element grouping, size analysis
+- **Workflow Patterns**: File patterns, method patterns, parameter studies
+- **Entry Operations**: Archive retrieval, file content access, search
 
-### Memgraph Server
+### Enhanced Memgraph Server (`memgraph_server_enhanced.py`)
 Provides tools for:
-- Executing Cypher queries
-- Creating nodes and relationships
-- Finding shortest paths between entities
-- Schema introspection
+- **Analysis Tools**: Periodic trends, cluster patterns, quick queries
+- **Interactive Exploration**: Dataset summaries, formula details
+- **Graph Operations**: Query, create, relationship management
+- **Dataset Management**: Clear, initialize indexes, statistics
 
-### Workflow Orchestrator
-`src/workflow_orchestrator.py` - Original orchestrator with hardcoded relationship rules
-`src/claude_orchestrator.py` - **Claude-driven orchestrator** that delegates intelligence to AI:
-- Extracts datasets from NOMAD with minimal processing
-- Provides MCP tools for Claude to explore and analyze data
-- Claude applies materials science knowledge to create relationships
-- No hardcoded rules - pure AI reasoning for workflow reconstruction
+### Workflow Orchestrators
+- `src/workflow_orchestrator.py` - Original hardcoded approach
+- `src/claude_orchestrator.py` - AI-driven orchestrator using enhanced MCP tools
 
 ### Integration Pattern
 The system reconstructs workflows through:

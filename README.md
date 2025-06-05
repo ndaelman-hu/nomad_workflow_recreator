@@ -1,14 +1,32 @@
 # NOMAD Workflow Recreator
 
-MCP (Model Context Protocol) servers for integrating NOMAD materials science database with Memgraph graph database, enabling AI-assisted workflow recreation and analysis.
+Enhanced MCP (Model Context Protocol) servers for integrating NOMAD materials science database with Memgraph graph database, enabling AI-assisted workflow recreation and advanced materials analysis.
 
 ## Features
 
-- **NOMAD MCP Server**: Query materials science data from NOMAD-lab.eu
-- **Memgraph MCP Server**: Manage workflow relationships using graph database
-- **Workflow Recreation**: Analyze and recreate computational workflows through graph traversal
+### Enhanced MCP Servers
+- **NOMAD MCP Server**: Dataset discovery, initialization, formula analysis, workflow patterns
+- **Memgraph MCP Server**: Graph operations, periodic trend analysis, cluster patterns, interactive exploration
+
+### Analysis Capabilities
+- Extract and analyze entries from NOMAD datasets
+- Build semantic workflow graphs automatically
+- Identify periodic trends and cluster size relationships
+- Perform interactive dataset exploration
+- Export graph data in multiple formats
 
 ## Quick Start
+
+### Automated Analysis (Recommended)
+```bash
+# Interactive mode with customization
+./run_analysis.sh
+
+# Automatic mode with defaults
+./run_analysis.sh --auto
+```
+
+### Manual Setup
 
 1. **Install dependencies**:
    ```bash
@@ -26,52 +44,76 @@ MCP (Model Context Protocol) servers for integrating NOMAD materials science dat
    # Edit .env with your NOMAD token and database settings
    ```
 
-4. **Run MCP servers**:
+4. **Run enhanced MCP servers**:
    ```bash
    # Terminal 1 - NOMAD server
-   python src/nomad_server.py
+   python src/nomad_server_enhanced.py
    
    # Terminal 2 - Memgraph server
-   python src/memgraph_server.py
+   python src/memgraph_server_enhanced.py
    ```
 
-## Usage
+5. **Launch Claude Code**:
+   ```bash
+   claude --config claude_config.json
+   ```
 
-### Dataset Workflow Reconstruction
+## Enhanced MCP Tools
 
-The system can automatically reconstruct complete computational workflows from NOMAD public datasets:
+### NOMAD Server Tools
+- **Dataset Management**
+  - `list_datasets` - List available NOMAD datasets
+  - `initialize_dataset_workflow` - Initialize complete workflow analysis
+  - `get_dataset_entries` - Extract all entries from a dataset
+  - `analyze_dataset_formulas` - Analyze chemical formula patterns
+  - `get_dataset_workflow_patterns` - Extract workflow patterns
 
-```python
-from src.workflow_orchestrator import WorkflowOrchestrator
+- **Entry Operations**
+  - `get_entry_archive` - Get full archive data for an entry
+  - `get_entry_with_files` - Get entry data including file contents
+  - `search_entries` - Search with custom filters
 
-orchestrator = WorkflowOrchestrator()
-summary = await orchestrator.reconstruct_dataset_workflow("dataset_name", "upload_name")
+### Memgraph Server Tools
+- **Analysis Tools**
+  - `memgraph_analyze_periodic_trends` - Analyze and create periodic relationships
+  - `memgraph_analyze_cluster_patterns` - Find cluster size variations
+  - `memgraph_quick_analysis` - Run predefined queries (formulas, relationships, trends)
+  - `memgraph_interactive_explore` - Interactive dataset exploration
+  - `memgraph_query_graph_export` - Export graph data
+
+- **Dataset Operations**
+  - `memgraph_clear_dataset` - Clear existing datasets
+  - `memgraph_initialize_indexes` - Create performance indexes
+  - `memgraph_get_dataset_stats` - Get detailed statistics
+
+- **Graph Operations**
+  - `memgraph_query` - Execute Cypher queries
+  - `memgraph_create_node` - Create nodes
+  - `memgraph_create_relationship` - Create relationships
+  - `memgraph_find_nodes` - Find nodes by criteria
+  - `memgraph_shortest_path` - Find paths between nodes
+
+## Usage Examples
+
+### Initialize New Dataset
+```
+Claude: Please list available NOMAD datasets and initialize the one about carbon clusters.
 ```
 
-### MCP Server Tools
+### Analyze Periodic Trends
+```
+Claude: Analyze periodic trends in the dataset and create PERIODIC_TREND relationships for alkali metals.
+```
 
-#### NOMAD Operations
-- `nomad_search_entries` - Search materials by formula, elements, properties
-- `nomad_get_dataset_entries` - Extract all entries from a dataset
-- `nomad_get_entry_files` - Analyze file structures (no raw content)
-- `nomad_get_workflow_metadata` - Extract workflow and calculation metadata
-- `nomad_analyze_dataset_structure` - Overview of dataset composition
-- `nomad_preview_dataset` - Lightweight dataset preview (essential fields only)
-- `nomad_read_input_files` - Read input file contents (raw text)
-- `nomad_read_script_files` - Read script files (raw text)
-- `nomad_read_specific_file` - Read any specific file from an entry
-- `nomad_extract_file_data` - Extract raw file data bundle for AI analysis
+### Quick Analysis
+```
+Claude: Run a quick analysis to show all formulas and their occurrence counts.
+```
 
-#### Graph Operations  
-- `memgraph_create_dataset_graph` - Build complete workflow graph from dataset
-- `memgraph_add_workflow_relationships` - Add semantic relationships
-- `memgraph_analyze_workflow_patterns` - Analyze workflow dependencies
-- `memgraph_trace_workflow` - Trace complete workflows from any entry
-- `memgraph_find_workflow_entry_types` - Find specific calculation types
-- `memgraph_store_file_data` - Store raw file data in graph for AI analysis
-- `memgraph_add_file_content_nodes` - Add file contents as separate nodes
-- `memgraph_store_parsed_data` - Store AI-analyzed data (parameters, commands, etc.)
-- `memgraph_query_file_patterns` - Query files by extension, name, size patterns
+### Interactive Exploration
+```
+Claude: Show me a dataset summary and then explore the details of C60 entries.
+```
 
 ## Architecture
 
@@ -83,19 +125,30 @@ summary = await orchestrator.reconstruct_dataset_workflow("dataset_name", "uploa
          │                       │
          │                       │
     ┌─────────────────────────────────────┐
-    │         MCP Servers                 │
-    │  ┌─────────────┐ ┌─────────────┐   │
-    │  │NOMAD Server │ │Graph Server │   │
-    │  └─────────────┘ └─────────────┘   │
+    │      Enhanced MCP Servers           │
+    │  ┌─────────────────┐ ┌─────────────┐│
+    │  │  NOMAD Server   │ │Memgraph     ││
+    │  │  + Dataset Init │ │+ Analysis   ││
+    │  │  + Formulas     │ │+ Trends     ││
+    │  │  + Patterns     │ │+ Export     ││
+    │  └─────────────────┘ └─────────────┘│
     └─────────────────────────────────────┘
                      │
                      │
             ┌─────────────────┐
-            │   AI Assistant  │
-            │ (Claude, etc.)  │
+            │  Claude Code    │
+            │ (AI Assistant)  │
             └─────────────────┘
 ```
 
+## Key Improvements
+
+1. **Unified Interface**: All analysis tools now accessible through MCP
+2. **Dynamic Dataset Support**: Initialize and analyze any NOMAD dataset
+3. **Advanced Analysis**: Periodic trends, cluster patterns, interactive exploration
+4. **Better Performance**: Database indexes and optimized queries
+5. **Cleaner Architecture**: Consolidated 11+ scripts into 2 enhanced MCP servers
+
 ## Development
 
-See [CLAUDE.md](CLAUDE.md) for detailed development guidance.
+See [CLAUDE.md](CLAUDE.md) for detailed development guidance and tool documentation.
