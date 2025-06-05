@@ -102,6 +102,19 @@ Gets detailed statistics about datasets.
   - `dataset_id` (str): Specific dataset or "all"
 - **Returns**: Entry counts, unique formulas, relationship counts
 
+#### `memgraph_get_reasoning_patterns`
+Retrieves existing reasoning patterns to maintain consistency.
+- **Parameters**:
+  - `relationship_type` (str, optional): Filter by specific relationship type
+  - `include_examples` (bool): Include example relationships (default: True)
+  - `min_confidence` (float): Minimum confidence threshold (default: 0.0)
+- **Returns**: 
+  - Reasoning patterns grouped by relationship type
+  - Usage counts and average confidence
+  - Example relationships for each pattern
+  - Common reasoning phrases
+  - Guidelines for consistent reasoning
+
 ## Usage Examples
 
 ### Example 1: Initialize and Analyze New Dataset
@@ -146,3 +159,17 @@ Gets detailed statistics about datasets.
 3. **Batch Operations**: Create relationships in batches for efficiency
 4. **Verify Results**: Use quick_analysis to verify relationship creation
 5. **Clean Up**: Use clear_dataset when switching between analyses
+6. **Maintain Reasoning Consistency**: Use get_reasoning_patterns before creating new relationships to understand existing patterns
+
+## Reasoning Best Practices
+
+When creating relationships with reasoning:
+1. **Check Existing Patterns**: Use `memgraph_get_reasoning_patterns` first
+2. **Be Specific**: Reference actual properties and values
+3. **Use Scientific Terms**: Maintain professional materials science terminology
+4. **Include Confidence Rationale**: Explain why confidence is high/low
+5. **Direction Matters**: Explain why the relationship goes from A→B not B→A
+
+Example reasoning:
+- Good: "Both Li2 and Na2 are alkali metal dimers with similar valence electron configurations leading to comparable bonding patterns"
+- Poor: "Similar elements"

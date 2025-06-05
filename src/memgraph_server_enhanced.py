@@ -386,6 +386,29 @@ async def list_tools() -> List[Tool]:
                     }
                 }
             }
+        ),
+        Tool(
+            name="memgraph_get_reasoning_patterns",
+            description="Get existing reasoning patterns from relationships to maintain consistency",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "relationship_type": {
+                        "type": "string",
+                        "description": "Filter by specific relationship type (optional)"
+                    },
+                    "include_examples": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Include example relationships with each reasoning pattern"
+                    },
+                    "min_confidence": {
+                        "type": "number",
+                        "default": 0.0,
+                        "description": "Minimum confidence threshold"
+                    }
+                }
+            }
         )
     ]
 
@@ -445,13 +468,19 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                             rel_query = """
                             MATCH (e1:Entry {entry_id: $id1})
                             MATCH (e2:Entry {entry_id: $id2})
-                            MERGE (e1)-[r:PERIODIC_TREND {group: $group, confidence: 0.9}]->(e2)
+                            MERGE (e1)-[r:PERIODIC_TREND {
+                                group: $group, 
+                                confidence: 0.9,
+                                reasoning: $reasoning
+                            }]->(e2)
                             RETURN r
                             """
+                            reasoning = f"Both {entries[i]['e.formula']} and {entries[i+1]['e.formula']} are {group_name.replace('_', ' ')} showing similar chemical properties and periodic trends"
                             await memgraph_client.execute_query(rel_query, {
                                 "id1": entries[i]['e.entry_id'],
                                 "id2": entries[i+1]['e.entry_id'],
-                                "group": group_name
+                                "group": group_name,
+                                "reasoning": reasoning
                             })
                             relationships_created += 1
                     
@@ -534,16 +563,19 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
                                     MERGE (e1)-[r:CLUSTER_SIZE_SERIES {
                                         size_from: $size1, 
                                         size_to: $size2,
-                                        confidence: $conf
+                                        confidence: $conf,
+                                        reasoning: $reasoning
                                     }]->(e2)
                                     RETURN r
                                     """
+                                    reasoning = f"Cluster size progression from {clusters[i]['formula']} ({clusters[i]['size']} atoms) to {clusters[i+1]['formula']} ({clusters[i+1]['size']} atoms) represents systematic size scaling for {elem} clusters"
                                     await memgraph_client.execute_query(rel_query, {
                                         "id1": clusters[i]['entry_id'],
                                         "id2": clusters[i+1]['entry_id'],
                                         "size1": clusters[i]['size'],
                                         "size2": clusters[i+1]['size'],
-                                        "conf": confidence
+                                        "conf": confidence,
+                                        "reasoning": reasoning
                                     })
                                     relationships_created += 1
                     
@@ -795,6 +827,123 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> CallToolResult:
             return CallToolResult(
                 content=[TextContent(type="text", text=stats_text)]
             )
+        
+        elif name == "memgraph_get_reasoning_patterns":
+            relationship_type = arguments.get("relationship_type")
+            include_examples = arguments.get("include_examples", True)
+            min_confidence = arguments.get("min_confidence", 0.0)
+            
+            try:
+                # Query to get reasoning patterns
+                if relationship_type:
+                    reasoning_query = """
+                    MATCH (e1:Entry)-[r:`{rel_type}`]->(e2:Entry)
+                    WHERE r.reasoning IS NOT NULL AND r.reasoning <> '' 
+                    AND (r.confidence IS NULL OR r.confidence >= $min_conf)
+                    WITH r.reasoning as reasoning, type(r) as rel_type, 
+                         COUNT(r) as usage_count, AVG(r.confidence) as avg_confidence,
+                         COLLECT({from: e1.formula, to: e2.formula, confidence: r.confidence})[0..3] as examples
+                    RETURN reasoning, rel_type, usage_count, avg_confidence, examples
+                    ORDER BY usage_count DESC
+                    """.format(rel_type=relationship_type)
+                else:
+                    reasoning_query = """
+                    MATCH (e1:Entry)-[r]->(e2:Entry)
+                    WHERE r.reasoning IS NOT NULL AND r.reasoning <> ''
+                    AND (r.confidence IS NULL OR r.confidence >= $min_conf)
+                    WITH r.reasoning as reasoning, type(r) as rel_type, 
+                         COUNT(r) as usage_count, AVG(r.confidence) as avg_confidence,
+                         COLLECT({from: e1.formula, to: e2.formula, confidence: r.confidence})[0..3] as examples
+                    RETURN reasoning, rel_type, usage_count, avg_confidence, examples
+                    ORDER BY usage_count DESC
+                    """
+                
+                results = await memgraph_client.execute_query(
+                    reasoning_query, 
+                    {"min_conf": min_confidence}
+                )
+                
+                # Group by relationship type
+                patterns_by_type = {}
+                for result in results:
+                    rel_type = result['rel_type']
+                    if rel_type not in patterns_by_type:
+                        patterns_by_type[rel_type] = []
+                    patterns_by_type[rel_type].append({
+                        'reasoning': result['reasoning'],
+                        'usage_count': result['usage_count'],
+                        'avg_confidence': result['avg_confidence'],
+                        'examples': result['examples'] if include_examples else []
+                    })
+                
+                # Also get common reasoning keywords/phrases
+                keyword_query = """
+                MATCH ()-[r]->()
+                WHERE r.reasoning IS NOT NULL AND r.reasoning <> ''
+                WITH r.reasoning as reasoning
+                RETURN reasoning
+                LIMIT 100
+                """
+                keyword_results = await memgraph_client.execute_query(keyword_query, {})
+                
+                # Extract common patterns
+                common_phrases = {}
+                for result in keyword_results:
+                    reasoning = result['reasoning'].lower()
+                    # Look for common patterns
+                    patterns = [
+                        "same group", "periodic trend", "cluster size", "isoelectronic",
+                        "parameter study", "similar structure", "workflow step", 
+                        "provides input", "optimization", "calculation"
+                    ]
+                    for pattern in patterns:
+                        if pattern in reasoning:
+                            common_phrases[pattern] = common_phrases.get(pattern, 0) + 1
+                
+                # Format results
+                reasoning_text = "Reasoning Patterns Analysis:\n\n"
+                
+                if patterns_by_type:
+                    reasoning_text += "## Reasoning by Relationship Type:\n\n"
+                    for rel_type, patterns in patterns_by_type.items():
+                        reasoning_text += f"### {rel_type}:\n"
+                        for i, pattern in enumerate(patterns[:5], 1):  # Top 5 per type
+                            reasoning_text += f"{i}. \"{pattern['reasoning']}\"\n"
+                            reasoning_text += f"   Used: {pattern['usage_count']} times"
+                            if pattern['avg_confidence']:
+                                reasoning_text += f", Avg confidence: {pattern['avg_confidence']:.2f}"
+                            reasoning_text += "\n"
+                            
+                            if include_examples and pattern['examples']:
+                                reasoning_text += "   Examples:\n"
+                                for ex in pattern['examples']:
+                                    reasoning_text += f"     - {ex['from']} → {ex['to']}"
+                                    if ex.get('confidence'):
+                                        reasoning_text += f" (conf: {ex['confidence']:.2f})"
+                                    reasoning_text += "\n"
+                            reasoning_text += "\n"
+                
+                if common_phrases:
+                    reasoning_text += "\n## Common Reasoning Phrases:\n"
+                    sorted_phrases = sorted(common_phrases.items(), key=lambda x: x[1], reverse=True)
+                    for phrase, count in sorted_phrases[:10]:
+                        reasoning_text += f"- \"{phrase}\": {count} occurrences\n"
+                
+                # Add guidelines for consistent reasoning
+                reasoning_text += "\n## Reasoning Guidelines:\n"
+                reasoning_text += "- Use scientific terminology consistently\n"
+                reasoning_text += "- Reference specific properties (e.g., 'same periodic group', 'increasing cluster size')\n"
+                reasoning_text += "- Include confidence rationale when relevant\n"
+                reasoning_text += "- Be specific about the relationship direction and purpose\n"
+                
+                return CallToolResult(
+                    content=[TextContent(type="text", text=reasoning_text)]
+                )
+                
+            except Exception as e:
+                return CallToolResult(
+                    content=[TextContent(type="text", text=f"Error getting reasoning patterns: {str(e)}")]
+                )
         
         else:
             return CallToolResult(
