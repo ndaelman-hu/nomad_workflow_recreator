@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  nomad-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    command: python src/nomad_server_enhanced.py
+    environment:
+      - NOMAD_TOKEN=${NOMAD_TOKEN}
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - mcp-network
+
+  memgraph-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    command: python src/memgraph_server_enhanced.py
+    environment:
+      - MEMGRAPH_HOST=memgraph
+      - MEMGRAPH_PORT=7687
+    depends_on:
+      - memgraph
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - mcp-network
+
+  logger-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    command: python src/logger_server.py
+    environment:
+      - LOG_DIR=/app/claude_logs
+    volumes:
+      - ./claude_logs:/app/claude_logs
+      - ./logs:/app/logs
+    networks:
+      - mcp-network
+
+  memgraph:
+    image: memgraph/memgraph:latest
+    ports:
+      - "7687:7687"
+    networks:
+      - mcp-network
+
+networks:
+  mcp-network:
+    driver: bridge
