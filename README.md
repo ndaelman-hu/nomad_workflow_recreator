@@ -7,6 +7,7 @@ Enhanced MCP (Model Context Protocol) servers for integrating NOMAD materials sc
 ### Enhanced MCP Servers
 - **NOMAD MCP Server**: Dataset discovery, initialization, formula analysis, workflow patterns
 - **Memgraph MCP Server**: Graph operations, periodic trend analysis, cluster patterns, interactive exploration
+- **Logger MCP Server**: Tool usage tracking, suggestion logging, missing tool detection
 
 ### Analysis Capabilities
 - Extract and analyze entries from NOMAD datasets
@@ -51,6 +52,9 @@ Enhanced MCP (Model Context Protocol) servers for integrating NOMAD materials sc
    
    # Terminal 2 - Memgraph server
    python src/memgraph_server_enhanced.py
+   
+   # Terminal 3 - Logger server (optional but recommended)
+   python src/logger_server.py
    ```
 
 5. **Launch Claude Code**:

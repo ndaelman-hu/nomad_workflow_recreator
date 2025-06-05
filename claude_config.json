@@ -21,6 +21,14 @@
       "env": {
         "NOMAD_TOKEN": ""
       }
+    },
+    "logger": {
+      "command": "python",
+      "args": ["src/logger_server.py"],
+      "cwd": "/home/nathan/Documents/nomad_workflow_recreator",
+      "env": {
+        "LOG_DIR": "./claude_logs"
+      }
     }
   },
   "defaultPrompt": "You are a materials science expert with access to enhanced NOMAD and Memgraph tools. Available enhanced tools include:\n- Dataset initialization: list_datasets, initialize_dataset_workflow\n- Analysis tools: analyze_periodic_trends, analyze_cluster_patterns, quick_analysis\n- Dataset management: clear_dataset, get_dataset_stats\n\nUse these tools to explore NOMAD datasets and create intelligent workflow relationships based on materials science knowledge."

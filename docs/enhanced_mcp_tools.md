@@ -152,6 +152,56 @@ Retrieves existing reasoning patterns to maintain consistency.
 | periodic_trends_summary.py | memgraph_analyze_periodic_trends |
 | analyze_and_populate.py | Combination of tools |
 
+## Logger Server Tools (`logger_server.py`)
+
+### Tool Usage Tracking
+
+#### `log_tool_usage`
+Logs successful or failed tool usage (primarily for MCP servers to call).
+- **Parameters**:
+  - `tool_name` (str): Name of the tool
+  - `arguments` (dict): Arguments passed
+  - `success` (bool): Whether it succeeded
+  - `duration_ms` (float, optional): Execution time
+  - `error` (str, optional): Error message if failed
+
+#### `get_tool_usage_stats`
+Retrieves statistics about tool usage.
+- **Parameters**:
+  - `tool_name` (str, optional): Filter by tool
+  - `last_n_hours` (int, optional): Time window
+- **Returns**: Usage counts, success rates, average durations
+
+### Suggestion Management
+
+#### `log_suggestion`
+Logs suggestions for new tools, scripts, or improvements.
+- **Parameters**:
+  - `suggestion_type` (str): "new_tool", "script", "improvement", "bug_fix", "feature"
+  - `title` (str): Short title
+  - `description` (str): Detailed description
+  - `code` (str, optional): Code snippet
+  - `context` (dict, optional): Additional context
+
+#### `get_suggestions`
+Retrieves logged suggestions.
+- **Parameters**:
+  - `suggestion_type` (str, optional): Filter by type
+  - `status` (str): "pending", "reviewed", "implemented", "rejected"
+
+### Missing Tools Tracking
+
+#### `log_missing_tool`
+Logs when Claude attempts to use non-existent tools.
+- **Parameters**:
+  - `attempted_tool` (str): Tool name attempted
+  - `similar_tools` (list): Similar existing tools
+  - `context` (str, optional): What was being attempted
+
+#### `get_missing_tools_report`
+Gets report on missing tool attempts.
+- **Returns**: Frequency of attempts, unique tools, recent attempts
+
 ## Best Practices
 
 1. **Start with Dataset Stats**: Always check what's in the database first
@@ -160,6 +210,7 @@ Retrieves existing reasoning patterns to maintain consistency.
 4. **Verify Results**: Use quick_analysis to verify relationship creation
 5. **Clean Up**: Use clear_dataset when switching between analyses
 6. **Maintain Reasoning Consistency**: Use get_reasoning_patterns before creating new relationships to understand existing patterns
+7. **Log Suggestions**: When you need a new tool or script, use log_suggestion instead of creating it inline
 
 ## Reasoning Best Practices
 
