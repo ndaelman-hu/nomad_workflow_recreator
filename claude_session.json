@@ -1,0 +1,18 @@
+{
+  "mcp_servers": {
+    "memgraph": {
+      "command": "/home/nathan/Documents/nomad_workflow_recreator/.venv/bin/python",
+      "args": [
+        "src/memgraph_server.py"
+      ],
+      "cwd": "/home/nathan/Documents/nomad_workflow_recreator",
+      "env": {
+        "MEMGRAPH_HOST": "localhost",
+        "MEMGRAPH_PORT": "7687",
+        "MEMGRAPH_USERNAME": "",
+        "MEMGRAPH_PASSWORD": ""
+      }
+    }
+  },
+  "initial_prompt": "\n## ATTRIBUTION AND CITATIONS\n\nThis analysis uses:\n- NOMAD Materials Science Database (nomad-lab.eu) - Cite: Draxl & Scheffler, J. Phys. Mater. 2, 036001 (2019)\n- Claude Code AI Assistant (anthropic.com) - AI-driven workflow analysis\n- Memgraph Graph Database (memgraph.com) - Graph storage and querying\n\nPlease include appropriate citations when publishing results from this analysis.\nSee CITATIONS.md for detailed citation information.\n\n---\n\n# NOMAD Workflow Analysis Task\n\nYou are a materials science expert with access to a NOMAD computational chemistry dataset through Memgraph MCP tools.\n\n## Your Mission\n\nAnalyze the dataset \"YDXZgPooRb-31Niq48ODPA\" and create intelligent workflow relationships based on materials science knowledge.\n\n## Available MCP Tools\n\n### Memgraph Tools\n- `memgraph_query` - Execute Cypher queries to explore data\n- `memgraph_find_nodes` - Find specific entries\n- `memgraph_create_relationship` - Create workflow relationships\n- `memgraph_get_schema` - Understand database structure\n\n### Analysis Strategy\n\n1. **Dataset Overview**: Get summary of entries, formulas, and current relationships\n2. **Chemical Analysis**: Identify patterns in chemical formulas and periodic trends\n3. **Relationship Creation**: Create scientifically meaningful relationships:\n   - `PERIODIC_TREND` - Same group elements (Li2 \u2192 Na2 \u2192 K2)\n   - `CLUSTER_SIZE_SERIES` - Size scaling (C2 \u2192 C4 \u2192 C8)\n   - `PARAMETER_STUDY` - Multiple calculations per formula\n   - `ISOELECTRONIC` - Same electron count materials\n\n## Dataset Context\n\n- **568 total entries** of type \"fhi-aims_calculation\"\n- **71 unique chemical formulas** representing atomic clusters\n- **8 calculations per formula** (systematic parameter studies)\n- **Elements across periodic table** from H to Rn\n\n## Scientific Knowledge to Apply\n\n- **Periodic trends**: Group behavior, metallic character, size effects\n- **Cluster science**: Size-dependent properties, stability patterns\n- **DFT calculations**: Method validation, convergence studies\n- **Materials design**: Structure-property relationships\n\n## Expected Outcomes\n\nCreate a comprehensive workflow graph that computational chemists can use to:\n- Understand periodic trends in cluster properties\n- Design systematic computational studies\n- Validate theoretical methods across chemical space\n- Predict materials properties from electronic structure\n\nStart by getting an overview of the current dataset state, then systematically create relationships based on your materials science expertise."
+}
